@@ -1,0 +1,25 @@
+# Configurazione soundpad. Tutte le voci sono facoltative: senza questo file valgono i default.
+
+# 127.0.0.1 = accetta eventi solo da questo computer.
+# 0.0.0.0 = accetta eventi dalla rete locale (serve se Claude gira su un altro computer).
+host = "127.0.0.1"
+port = 47800
+
+# Pressione lunga (secondi) per togliere una sessione dalla griglia
+long_press_seconds = 1.0
+
+# Una sessione senza eventi da questo numero di ore sparisce dalla griglia
+session_ttl_hours = 12
+
+# stato = [colore, lampeggio]
+# Colori disponibili sul Launchpad originale:
+#   off, red_low, red, green_low, green, amber_low, amber, orange, yellow
+[colors]
+starting = ["green_low", false]         # sessione aperta, nessun prompt ancora
+working = ["amber_low", false]          # Claude sta lavorando
+compacting = ["yellow", true]           # compattazione del contesto in corso
+needs_permission = ["red", true]        # aspetta che approvi uno strumento
+done = ["green", false]                 # ha finito il turno
+idle = ["green", true]                  # ha finito da più di un minuto e non hai risposto
+seen = ["green_low", false]             # hai premuto il pad dopo "done"
+error = ["red", false]                  # il turno si è interrotto per un errore API
