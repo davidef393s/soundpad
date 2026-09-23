@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>soundpad</title>
+<style>
+  :root {
+    --bg: #f4f3ef;
+    --panel: #ffffff;
+    --ink: #1c1c1a;
+    --muted: #6b6a64;
+    --line: #e2e0d8;
+    --device: #232322;
+    --device-edge: #121211;
+    --pad-off: #3a3a38;
+    --accent: #1c1c1a;
+    --danger: #c42b1c;
+    --ok: #1f8a3b;
+    --focus: #2f6fdf;
+    --lp-red_low: #8c2a22; --lp-red: #ff3b2f;
+    --lp-green_low: #2a6e3a; --lp-green: #3ee06a;
+    --lp-amber_low: #8a6418; --lp-amber: #ffb21e;
+    --lp-orange: #ff7a1a; --lp-yellow: #ffe24a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #151514; --panel: #1e1e1c; --ink: #ecebe6; --muted: #9a9890;
+      --line: #2f2f2c; --device: #0d0d0c; --device-edge: #000; --pad-off: #2b2b29;
+      --accent: #ecebe6; --danger: #ff6b5e; --ok: #4cd774; --focus: #7aa7ff;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #151514; --panel: #1e1e1c; --ink: #ecebe6; --muted: #9a9890;
+    --line: #2f2f2c; --device: #0d0d0c; --device-edge: #000; --pad-off: #2b2b29;
+    --accent: #ecebe6; --danger: #ff6b5e; --ok: #4cd774; --focus: #7aa7ff;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }  /* le regole display: flex non devono annullarlo */
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 16px 48px; }
+
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin-bottom: 24px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  .status { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px;
+    border: 1px solid var(--line); border-radius: 999px; background: var(--panel);
+    font-size: 13px; color: var(--muted);
+  }
+  .pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .pill.on i { background: var(--ok); }
+  .pill.off i { background: var(--danger); }
+
+  main { display: grid; grid-template-columns: minmax(0, 460px) minmax(0, 1fr); gap: 28px; align-items: start; }
+  @media (max-width: 860px) { main { grid-template-columns: minmax(0, 1fr); } }
+
+  /* --- Launchpad ------------------------------------------------------- */
+  .device {
+    background: var(--device); border-radius: 18px; padding: 18px;
+    box-shadow: inset 0 0 0 1px var(--device-edge), 0 10px 30px rgba(0,0,0,.18);
+  }
+  .lp { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 7px; }
+  .round, .pad, .scene {
+    aspect-ratio: 1; border: 0; padding: 0; background: var(--pad-off);
+    color: transparent; cursor: default; position: relative;
+  }
+  .round, .scene { border-radius: 50%; transform: scale(.72); }
+  .pad { border-radius: 5px; }
+  .pad.filled { cursor: pointer; }
+  .pad.filled:hover { outline: 2px solid rgba(255,255,255,.55); outline-offset: 1px; }
+  .pad.selected { outline: 2px solid #fff; outline-offset: 2px; }
+  .pad:focus-visible, .scene:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .lit, .swatch.lit { background: var(--c); box-shadow: 0 0 14px -2px var(--c); }
+  .swatch.lit { box-shadow: 0 0 8px -3px var(--c); }
+  .flash { animation: flash 1s steps(1) infinite; }
+  @keyframes flash { 50% { background: var(--pad-off); box-shadow: none; } }
+  @media (prefers-reduced-motion: reduce) { .flash { animation-duration: 2.4s; } }
+  .scene.clickable { cursor: pointer; }
+  .device-note { color: #8d8c86; font-size: 12px; margin: 12px 2px 0; }
+
+  /* --- sessioni -------------------------------------------------------- */
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+  .panel-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 14px 16px; border-bottom: 1px solid var(--line);
+  }
+  .panel-head h2 { font-size: 15px; margin: 0; }
+  .count { color: var(--muted); font-weight: 400; }
+  ul.sessions { list-style: none; margin: 0; padding: 0; }
+  .row {
+    display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 12px; align-items: center;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+  }
+  .row:last-child { border-bottom: 0; }
+  .row.selected { background: color-mix(in srgb, var(--focus) 10%, transparent); }
+  .swatch { width: 22px; height: 22px; border-radius: 5px; background: var(--pad-off); }
+  .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .state { font-weight: 500; }
+  .state.urgent { color: var(--danger); }
+  .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  .row.asking { box-shadow: inset 3px 0 0 var(--danger); }
+  .ask { margin-top: 6px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ask code {
+    font: 12px/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace; padding: 2px 6px; border-radius: 5px;
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+  }
+  button.btn {
+    font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--line); background: transparent; color: var(--ink);
+  }
+  button.btn:hover { border-color: var(--muted); }
+  button.btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  button.btn.allow { background: var(--ok); border-color: var(--ok); color: #fff; }
+  button.btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+  button.btn:disabled { opacity: .45; cursor: default; }
+  button.btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .empty { padding: 28px 16px; color: var(--muted); text-align: center; }
+  @media (max-width: 520px) {
+    .row { grid-template-columns: 22px minmax(0, 1fr); }
+    .actions { grid-column: 2; }
+  }
+
+  /* --- impostazioni ---------------------------------------------------- */
+  .settings { margin-top: 28px; padding: 16px; }
+  .settings h2 { font-size: 15px; margin: 0 0 4px; }
+  .setting {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 12px 0; border-bottom: 1px solid var(--line);
+  }
+  .setting:last-of-type { border-bottom: 0; }
+  .setting .meta { white-space: normal; }
+  .settings #settings-error, .setting .meta.urgent { color: var(--danger); }
+  .settings #settings-error { margin: 8px 0 0; }
+  .switch { position: relative; flex: none; width: 42px; height: 24px; cursor: pointer; }
+  .switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+  .switch span {
+    position: absolute; inset: 0; border-radius: 999px; background: var(--line); transition: background .15s;
+  }
+  .switch span::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+    background: var(--panel); box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: transform .15s;
+  }
+  .switch input:checked + span { background: var(--ok); }
+  .switch input:checked + span::after { transform: translateX(18px); }
+  .switch input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  /* --- legenda --------------------------------------------------------- */
+  .legend { margin-top: 28px; padding: 16px; }
+  .legend h2 { font-size: 15px; margin: 0 0 12px; }
+  .legend ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 20px; }
+  .legend li { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+  .legend .swatch { flex: none; width: 18px; height: 18px; }
+  .legend p { color: var(--muted); font-size: 13px; margin: 14px 0 0; }
+
+  .banner {
+    display: none; margin-bottom: 20px; padding: 12px 16px; border-radius: 10px;
+    border: 1px solid var(--danger); color: var(--danger); background: var(--panel);
+  }
+  .banner.show { display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>soundpad</h1>
+    <div class="status">
+      <span class="pill" id="pill-daemon"><i></i><span>demone</span></span>
+      <span class="pill" id="pill-pad"><i></i><span>Launchpad</span></span>
+    </div>
+  </header>
+
+  <div class="banner" id="banner">Il demone non risponde. Avvialo con <code>uv run soundpad</code>: la pagina si ricollega da sola.</div>
+
+  <main>
+    <section>
+      <div class="device">
+        <div class="lp" id="lp" role="grid" aria-label="Launchpad"></div>
+        <p class="device-note">Clic su un pad: seleziona la sessione. Tondo in basso a destra: toglie le sessioni ferme.
+          Se una sessione chiede un permesso, i tondi in alto 5, 6 e 7 rispondono: accetta una volta, accetta sempre, rifiuta.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Sessioni <span class="count" id="count"></span></h2>
+        <button class="btn" id="clear" type="button">Togli le ferme</button>
+      </div>
+      <ul class="sessions" id="list"></ul>
+    </section>
+  </main>
+
+  <section class="panel settings" id="settings" hidden>
+    <h2>Impostazioni</h2>
+    <div class="setting">
+      <div>
+        <div class="name">Hook di Claude Code</div>
+        <div class="meta" id="hooks-state"></div>
+      </div>
+      <button class="btn" id="hooks-btn" type="button"></button>
+    </div>
+    <div class="setting" id="autostart-row" hidden>
+      <div>
+        <div class="name">Avvia con Windows</div>
+        <div class="meta">parte nascosto, con la sola icona vicino all'orologio</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="autostart"><span></span></label>
+    </div>
+    <p class="meta" id="settings-error" hidden></p>
+  </section>
+
+  <section class="panel legend">
+    <h2>Legenda</h2>
+    <ul id="legend"></ul>
+    <p>"Apri" (o la pressione breve sul pad) porta in primo piano l'app Claude, apre la chat di quella sessione e
+      segna il turno come visto. Per le sessioni avviate fuori dall'app desktop, per esempio da un terminale, porta
+      in primo piano solo l'app.</p>
+  </section>
+</div>
+
+<script>
+const STATES = {
+  needs_permission: "aspetta un permesso",
+  error: "turno interrotto da un errore API",
+  idle: "ha finito e ti aspetta",
+  done: "ha finito il turno",
+  compacting: "compattazione del contesto",
+  working: "al lavoro",
+  starting: "sessione aperta",
+  seen: "turno già visto",
+};
+const URGENT = new Set(["needs_permission", "error", "idle"]);
+const STOPPED = new Set(["done", "idle", "seen", "error"]);
+
+let state = null;
+let selected = null;   // slot selezionato
+let colors = {};
+
+const $ = (id) => document.getElementById(id);
+
+function project(cwd) {
+  if (!cwd) return "(cartella sconosciuta)";
+  const parts = cwd.replace(/[\\/]+$/, "").split(/[\\/]/);
+  return parts[parts.length - 1] || cwd;
+}
+
+// Titolo della chat nell'app Claude, se c'è; altrimenti il nome della cartella
+function label(s) {
+  return s.title || project(s.cwd);
+}
+
+function ago(seconds) {
+  if (seconds < 45) return "adesso";
+  const m = Math.round(seconds / 60);
+  if (m < 60) return `${m} min fa`;
+  const h = Math.floor(m / 60);
+  return `${h} h ${m % 60} min fa`;
+}
+
+function paint(el, color, flash) {
+  el.classList.remove("lit", "flash");
+  el.style.removeProperty("--c");
+  if (color && color !== "off") {
+    el.style.setProperty("--c", `var(--lp-${color})`);
+    el.classList.add("lit");
+    if (flash) el.classList.add("flash");
+  }
+}
+
+// --- griglia (costruita una volta, poi solo ridipinta) ---------------------
+const tops = [], pads = [], scenes = [];
+function buildDevice() {
+  const lp = $("lp");
+  for (let c = 0; c < 8; c++) {
+    const b = document.createElement("div");
+    b.className = "round";
+    b.setAttribute("aria-hidden", "true");
+    tops.push(b); lp.appendChild(b);
+  }
+  lp.appendChild(Object.assign(document.createElement("div"), { ariaHidden: "true" }));
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const slot = r * 8 + c;
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "pad";
+      b.addEventListener("click", () => select(slot, true));
+      pads.push(b); lp.appendChild(b);
+    }
+    const s = document.createElement("button");
+    s.type = "button"; s.className = "scene"; s.tabIndex = -1;
+    s.setAttribute("aria-hidden", "true");
+    if (r === 7) s.addEventListener("click", () => act({ action: "clear" }));
+    scenes.push(s); lp.appendChild(s);
+  }
+}
+
+function renderDevice() {
+  const bySlot = new Map((state?.sessions || []).map((s) => [s.slot, s]));
+  pads.forEach((el, slot) => {
+    const s = bySlot.get(slot);
+    const [color, flash] = s ? (colors[s.state] || ["off", false]) : ["off", false];
+    paint(el, color, flash);
+    el.classList.toggle("filled", !!s);
+    el.classList.toggle("selected", !!s && slot === selected);
+    el.disabled = !s;
+    el.setAttribute("aria-label", s ? `Pad ${slot + 1}: ${label(s)}, ${STATES[s.state] || s.state}` : `Pad ${slot + 1}: vuoto`);
+    el.title = s ? `${label(s)} — ${STATES[s.state] || s.state}` : "";
+  });
+  const sessions = state?.sessions || [];
+  paint(tops[0], state ? "green_low" : "off", false);
+  paint(tops[7], sessions.some((s) => s.state === "needs_permission") ? "red" : "off", true);
+  // Tondi 5-7: rispondono alla richiesta di permesso "attiva", come sul Launchpad
+  const target = sessions.find((s) => s.permission?.target)?.permission;
+  paint(tops[4], target ? "green" : "off", false);
+  paint(tops[5], target?.can_always ? "amber" : "off", false);
+  paint(tops[6], target ? "red_low" : "off", false);
+  // Colonna di stato (tondi a destra, righe 0-6 dal basso), come sul Launchpad
+  const count = (states) => sessions.filter((s) => states.includes(s.state)).length;
+  const meter = [
+    ...Array(count(["needs_permission", "error"])).fill("red"),
+    ...Array(count(["done", "idle"])).fill("green"),
+    ...Array(count(["working", "compacting"])).fill("amber_low"),
+  ];
+  for (let i = 0; i < 7; i++) paint(scenes[6 - i], meter[i] || "off", false);
+  const anyStopped = sessions.some((s) => STOPPED.has(s.state));
+  paint(scenes[7], anyStopped ? "amber_low" : "off", false);
+  scenes[7].classList.toggle("clickable", anyStopped);
+  scenes[7].title = anyStopped ? "Togli le sessioni ferme" : "";
+}
+
+// --- elenco --------------------------------------------------------------
+// Ricostruito solo quando cambia qualcosa: rifarlo a ogni poll farebbe perdere i clic in corso.
+let listKey = "";
+function renderList() {
+  const list = $("list");
+  const sessions = state?.sessions || [];
+  const key = JSON.stringify([
+    !!state, selected, colors,
+    sessions.map((s) => [s.slot, s.state, s.cwd, s.title, s.permission, Math.floor((state.now - s.last_seen) / 30)]),
+  ]);
+  if (key === listKey) return;
+  listKey = key;
+  $("count").textContent = sessions.length ? `(${sessions.length})` : "";
+  $("clear").disabled = !sessions.some((s) => STOPPED.has(s.state));
+  if (!sessions.length) {
+    list.innerHTML = `<li class="empty">${state ? "Nessuna sessione. Aprine una nella scheda Code dell'app Claude." : "In attesa del demone…"}</li>`;
+    return;
+  }
+  list.replaceChildren(...sessions.map((s) => {
+    const li = document.createElement("li");
+    li.className = "row" + (s.slot === selected ? " selected" : "");
+    li.id = `row-${s.slot}`;
+    const sw = document.createElement("span");
+    sw.className = "swatch";
+    const [color, flash] = colors[s.state] || ["off", false];
+    paint(sw, color, flash);
+
+    const info = document.createElement("div");
+    const name = document.createElement("div");
+    name.className = "name";
+    name.textContent = `${s.slot + 1}. ${label(s)}`;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    const st = document.createElement("span");
+    st.className = "state" + (URGENT.has(s.state) ? " urgent" : "");
+    st.textContent = STATES[s.state] || s.state;
+    meta.append(st, ` · ${ago(state.now - s.last_seen)} · ${s.title ? project(s.cwd) : (s.cwd || "")}`);
+    meta.title = s.cwd || "";
+    info.append(name, meta);
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    const button = (text, cls, body) => {
+      const b = Object.assign(document.createElement("button"), { type: "button", className: "btn " + cls, textContent: text });
+      b.addEventListener("click", () => act(body));
+      return b;
+    };
+    const p = s.permission;
+    if (p) {
+      // Cosa chiede: strumento + comando/file, così sai cosa stai approvando
+      const ask = document.createElement("div");
+      ask.className = "ask";
+      const tool = Object.assign(document.createElement("strong"), { textContent: p.tool });
+      const what = Object.assign(document.createElement("code"), { textContent: p.summary });
+      ask.append(tool, " ", what);
+      ask.title = p.summary;
+      info.append(ask);
+      actions.append(
+        button("Accetta", "primary allow", { action: "once", session_id: s.session_id }),
+        ...(p.can_always ? [button("Sempre", "", { action: "always", session_id: s.session_id })] : []),
+        button("Rifiuta", "danger", { action: "deny", session_id: s.session_id }),
+      );
+      li.classList.add("asking");
+    }
+    actions.append(
+      button("Apri", p ? "" : "primary", { action: "open", slot: s.slot }),
+      button("Rimuovi", "", { action: "forget", slot: s.slot }),
+    );
+
+    li.append(sw, info, actions);
+    li.addEventListener("click", (e) => { if (e.target.tagName !== "BUTTON") select(s.slot, false); });
+    return li;
+  }));
+}
+
+function renderLegend() {
+  const ul = $("legend");
+  ul.replaceChildren(...Object.keys(STATES).map((key) => {
+    const li = document.createElement("li");
+    const sw = document.createElement("span");
+    sw.className = "swatch";
+    const [color, flash] = colors[key] || ["off", false];
+    paint(sw, color, flash);
+    li.append(sw, STATES[key]);
+    return li;
+  }));
+}
+
+function renderStatus() {
+  const d = $("pill-daemon"), p = $("pill-pad");
+  d.className = "pill " + (state ? "on" : "off");
+  d.lastElementChild.textContent = state ? "demone attivo" : "demone spento";
+  p.className = "pill " + (state ? (state.connected ? "on" : "off") : "");
+  p.lastElementChild.textContent = !state ? "Launchpad ?" : state.connected ? "Launchpad collegato" : "Launchpad scollegato";
+  $("banner").classList.toggle("show", !state);
+  const waiting = (state?.sessions || []).filter((s) => s.state === "needs_permission").length;
+  document.title = waiting ? `(${waiting}) soundpad` : "soundpad";
+}
+
+function render() {
+  if (selected !== null && !(state?.sessions || []).some((s) => s.slot === selected)) selected = null;
+  renderStatus(); renderDevice(); renderList();
+}
+
+function select(slot, scroll) {
+  selected = slot;
+  render();
+  if (scroll) $(`row-${slot}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+// --- rete ------------------------------------------------------------------
+async function act(body) {
+  try {
+    const r = await fetch("/action", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    state = await r.json();
+  } catch { state = null; }
+  render();
+}
+
+let legendKey = "";
+async function poll() {
+  try {
+    const r = await fetch("/state", { cache: "no-store" });
+    state = await r.json();
+    colors = state.colors || colors;
+    const key = JSON.stringify(colors);
+    if (key !== legendKey) { legendKey = key; renderLegend(); }
+  } catch { state = null; }
+  render();
+}
+
+// --- impostazioni (solo da questo computer) ----------------------------------
+let settings = null;
+function renderSettings() {
+  $("settings").hidden = !settings;
+  if (!settings) return;
+  const on = settings.hooks_installed;
+  $("hooks-state").textContent = on
+    ? "installati: ogni sessione nuova accende un pad"
+    : "non installati: le sessioni non arrivano al Launchpad";
+  $("hooks-state").classList.toggle("urgent", !on);
+  $("hooks-btn").textContent = on ? "Togli" : "Installa";
+  $("hooks-btn").className = "btn" + (on ? "" : " primary");
+  $("autostart-row").hidden = settings.autostart === null;
+  $("autostart").checked = !!settings.autostart;
+}
+
+async function loadSettings(path = "/app/settings", body = null) {
+  const err = $("settings-error");
+  err.hidden = true;
+  try {
+    const r = await fetch(path, body ? {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    } : { cache: "no-store" });
+    const data = await r.json();
+    if (!r.ok) {
+      if (body) { err.textContent = data.error || "operazione non riuscita"; err.hidden = false; }
+      else settings = null;
+    } else settings = data;
+  } catch { settings = null; }
+  renderSettings();
+}
+
+buildDevice();
+if (location.protocol === "file:") {
+  // Aperta come file: il browser non la lascia parlare con il demone
+  $("banner").innerHTML = 'Questa pagina va aperta dal demone, non come file: vai su ' +
+    '<a href="http://127.0.0.1:47800/">http://127.0.0.1:47800/</a> (con <code>uv run soundpad</code> acceso).';
+  $("banner").classList.add("show");
+} else {
+  $("clear").addEventListener("click", () => act({ action: "clear" }));
+  $("hooks-btn").addEventListener("click", () => {
+    if (settings.hooks_installed && !confirm("Togliere gli hook? Il Launchpad smette di ricevere le sessioni.")) return;
+    loadSettings("/app/hooks", { installed: !settings.hooks_installed });
+  });
+  $("autostart").addEventListener("change", (e) => loadSettings("/app/autostart", { enabled: e.target.checked }));
+  loadSettings();
+  poll();
+  setInterval(poll, 1000);
+}
+</script>
+</body>
+</html>

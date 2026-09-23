@@ -31,6 +31,15 @@ COLORS: dict[str, tuple[int, int]] = {
     "orange": (3, 2),
     "yellow": (2, 3),
 }
+# Tutte le altre combinazioni rosso/verde, usate dalle animazioni: "r2g1" = rosso 2, verde 1
+for _r in range(4):
+    for _g in range(4):
+        if (_r, _g) not in COLORS.values():
+            COLORS[f"r{_r}g{_g}"] = (_r, _g)
+# (rosso, verde) -> nome; i nomi "belli" vincono perché inseriti prima
+_NAME_OF: dict[tuple[int, int], str] = {}
+for _name, _rg in COLORS.items():
+    _NAME_OF.setdefault(_rg, _name)
 
 TOP_ROW_CC = range(104, 112)
 
@@ -45,6 +54,16 @@ class Led:
         if red == 0 and green == 0:
             return FLAG_STEADY
         return 16 * green + red + (FLAG_FLASH if self.flash else FLAG_STEADY)
+
+    @property
+    def rg(self) -> tuple[int, int]:
+        return COLORS[self.color]
+
+    @staticmethod
+    def of(rg: tuple[int, int], flash: bool = False) -> Led:
+        """Led da (rosso, verde) 0..3, con il nome canonico: così Led.of((3, 0)) == Led("red")."""
+        name = _NAME_OF[(max(0, min(3, rg[0])), max(0, min(3, rg[1])))]
+        return Led(name, flash and name != "off")
 
 
 # Coordinate di un tasto: ("grid", riga, colonna) con colonna 8 = tasto scene,
@@ -200,7 +219,9 @@ class SimLaunchpad:
     def render(self) -> str:
         def cell(key: Key) -> str:
             led = self.leds.get(key, Led())
-            glyph = self._ANSI[led.color]
+            red, green = led.rg
+            # colori delle animazioni senza nome: colore "vero" del terminale
+            glyph = self._ANSI.get(led.color) or f"\033[38;2;{red * 85};{green * 85};0m●\033[0m"
             return glyph.replace("●", "◉") if led.flash else glyph
 
         lines = [" ".join(cell(("top", 0, c)) for c in range(8))]

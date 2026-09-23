@@ -1,7 +1,8 @@
 # soundpad
 
 Launchpad originale (NOVLPD01) come spia delle sessioni di Claude Code, alimentata dagli hook.
-Un pad = una sessione. Funziona su Windows e macOS.
+Un pad = una sessione. Il demone funziona su Windows e macOS; aprire la chat giusta, l'avvio automatico e
+l'exe sono per ora solo Windows (dettagli e stato del lavoro in [HANDOFF.md](HANDOFF.md)).
 
 ## Legenda
 
@@ -21,10 +22,68 @@ Tasti di servizio:
 - **scene in basso a destra**: toglie dalla griglia tutte le sessioni ferme
 
 Sui pad della griglia:
-- **pressione breve**: porta in primo piano l'app Claude e segna il turno come visto
+- **pressione breve**: apre nell'app Claude la chat di quella sessione e segna il turno come visto
 - **pressione lunga** (1 s): toglie la sessione dalla griglia
 
+Tondi in alto 5, 6 e 7, accesi solo quando una sessione chiede un permesso:
+- **verde**: accetta una volta
+- **ambra**: accetta sempre (salva la regola che Claude Code propone; spento se non ne propone)
+- **rosso tenue**: rifiuta
+
+Rispondono alla richiesta del pad che hai premuto per ultimo, altrimenti alla più vecchia. Puoi anche
+rispondere nell'app come sempre: il demone se ne accorge e lascia perdere. Se non rispondi entro
+`permission_wait_seconds` (90 s), decide l'app come se soundpad non ci fosse.
+
+Colonna dei tondi a destra (righe 1-7, dal basso): un tondo per sessione. Rosso = ti aspetta
+(permesso o errore), verde = ha finito, ambra tenue = sta lavorando.
+
+## Animazioni
+
+- **avvio**: una fascia rosso, ambra, verde attraversa il Launchpad quando si collega
+- **sessione nuova**: il pad lampeggia e manda una piccola onda ambra
+- **al lavoro**: il pad "respira" invece di stare fisso
+- **turno finito**: onda verde verso i pad vicini
+- **permesso**: onda rossa su tutta la griglia, poi il pad lampeggia
+- **sessione tolta**: il pad si spegne sfumando
+- **tasto premuto**: si illumina subito
+- **griglia vuota da 30 s**: screensaver con pioggia verde tenue
+
+Si spengono con `animations = false` in `config.toml`.
+
 I colori si cambiano in `config.toml`.
+
+## App (soundpad.exe)
+
+`dist\soundpad.exe` fa tutto da solo, senza terminale: avvia il demone, apre una finestra con la griglia e
+mette un'icona vicino all'orologio.
+
+- **chiudere la finestra la nasconde**: il Launchpad continua a funzionare. Per riaprirla, doppio clic
+  sull'icona oppure rilancia `soundpad.exe`
+- **Esci** dal menu dell'icona (tasto destro) ferma tutto
+- in fondo alla finestra, **Impostazioni**: installa o togli gli hook, e "Avvia con Windows"
+  (parte nascosto, con la sola icona)
+- `config.toml` va messo accanto a `soundpad.exe` (la build ce lo copia)
+- non tenerlo acceso insieme a `uv run soundpad`: usano la stessa porta. L'app te lo segnala
+
+Per ricostruirlo dopo una modifica al codice:
+```
+uv run --extra app --group build python build.py
+```
+Senza costruire l'exe: `uv run --extra app soundpad-app`. Il log dell'app è in `%LOCALAPPDATA%\soundpad\soundpad.log`.
+
+## Pagina web
+
+Con il demone acceso, apri **http://127.0.0.1:47800/** nel browser. La pagina mostra la griglia com'è sul
+Launchpad e, per ogni pad, il progetto, la cartella, lo stato e da quanto tempo non succede niente. Si aggiorna
+da sola ogni secondo e funziona anche senza Launchpad collegato.
+
+- clic su un pad: evidenzia la sua sessione nell'elenco
+- **Apri**: come la pressione breve (apre la chat nell'app Claude e segna il turno come visto)
+- **Accetta / Sempre / Rifiuta**: compaiono quando la sessione chiede un permesso, con il comando o il file richiesto
+- **Rimuovi**: come la pressione lunga
+- **Togli le ferme**: come il tasto scene in basso a destra
+
+Il titolo della scheda mostra quante sessioni aspettano un permesso, per esempio `(2) soundpad`.
 
 ## Installazione su Windows
 
@@ -89,9 +148,17 @@ Solo libreria standard, non serve il Launchpad:
 uv run python -m unittest -v
 ```
 
+## Versione di Python
+
+Il progetto usa Python 3.12 (file `.python-version`): `python-rtmidi` non ha pacchetti già compilati
+per Windows con Python 3.13, e senza un compilatore C++ l'installazione fallisce. uv scarica da solo
+Python 3.12 se non è installato.
+
 ## Limiti noti
 
 - Se il demone è spento, gli hook falliscono senza bloccare Claude. L'app può mostrare un avviso di hook non riuscito.
-- La pressione breve porta in primo piano l'app Claude, ma non apre la sessione specifica.
+- Per aprire la chat giusta soundpad "clicca" la chat nella barra laterale dell'app (UI Automation di
+  Windows): se due chat hanno lo stesso titolo apre la prima, e un aggiornamento dell'app può romperlo.
+  Le sessioni avviate da un terminale portano in primo piano solo l'app.
 - Le sessioni cloud non leggono `~/.claude/settings.json`: non accendono pad.
 - Riavviando il demone la griglia riparte vuota. Ogni sessione ricompare al suo evento successivo, anche in una posizione diversa.

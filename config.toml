@@ -11,6 +11,20 @@ long_press_seconds = 1.0
 # Una sessione senza eventi da questo numero di ore sparisce dalla griglia
 session_ttl_hours = 12
 
+# "Apri" apre la chat della sessione nell'app Claude (solo Windows); false = porta in primo piano l'app e basta
+open_chat = true
+
+# Animazioni sul Launchpad: onde, "al lavoro" che respira, avvio, screensaver. false = luci fisse
+animations = true
+# Screensaver (pioggia verde) a griglia vuota dopo questi secondi; 0 = mai
+screensaver_after_seconds = 30
+
+# Rispondere ai permessi dal Launchpad (tondi in alto 5-7: accetta una volta, accetta sempre, rifiuta).
+# Il demone tiene in sospeso la richiesta per questi secondi (max 110); 0 = funzione spenta
+permission_wait_seconds = 90
+# Quante onde rosse attraversano la griglia quando arriva una richiesta di permesso
+permission_waves = 5
+
 # stato = [colore, lampeggio]
 # Colori disponibili sul Launchpad originale:
 #   off, red_low, red, green_low, green, amber_low, amber, orange, yellow

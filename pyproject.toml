@@ -8,9 +8,24 @@ dependencies = [
     "python-rtmidi>=1.5",
 ]
 
+[project.optional-dependencies]
+# Finestra e icona nell'area di notifica: uv run --extra app soundpad-app
+app = [
+    "pywebview>=5",
+    "pystray>=0.19",
+    "pillow>=10",
+]
+
+[dependency-groups]
+# Solo per costruire soundpad.exe (build.py)
+build = ["pyinstaller>=6"]
+
 [project.scripts]
 soundpad = "soundpad.daemon:main"
 soundpad-hooks = "soundpad.install_hooks:main"
+
+[project.gui-scripts]
+soundpad-app = "soundpad.app:main"
 
 [build-system]
 requires = ["hatchling"]
