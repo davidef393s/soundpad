@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import signal
 import subprocess
@@ -56,6 +57,10 @@ DEFAULT_CONFIG = {
     "focus_command": {},
 }
 
+# SOUNDPAD_LOG_EVENTS=1: scrive nel log ogni evento ricevuto (nome, strumento, sessione), per capire cosa manda
+# Claude Code. Sotto launchd: `launchctl setenv SOUNDPAD_LOG_EVENTS 1` e poi riavvio del demone.
+LOG_EVENTS = bool(os.environ.get("SOUNDPAD_LOG_EVENTS"))
+
 # Tasto scene in basso a destra: dimentica tutte le sessioni ferme (done/idle/seen/error)
 CLEAR_KEY: Key = ("grid", 7, 8)
 # Tasto tondo in alto a sinistra: spia del demone (verde = in ascolto)
@@ -64,6 +69,9 @@ HEARTBEAT_KEY: Key = ("top", 0, 0)
 ALERT_KEY: Key = ("top", 0, 7)
 # Tasti tondi per rispondere a una richiesta di permesso (accesi solo quando ce n'è una)
 PERMISSION_KEYS: dict[str, Key] = {"once": ("top", 0, 4), "always": ("top", 0, 5), "deny": ("top", 0, 6)}
+# Riga in basso della griglia: le opzioni di una domanda di Claude (AskUserQuestion), da sinistra.
+# Mentre c'è una domanda coprono le sessioni di quella riga. Il tondo "once" conferma la scelta multipla.
+OPTION_KEYS: list[Key] = [("grid", 7, c) for c in range(8)]
 # Eventi che dicono che la richiesta in sospeso ha già avuto risposta (nell'app)
 ANSWERED_EVENTS = {"PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionDenied",
                    "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd"}
@@ -239,6 +247,9 @@ class Board:
             if self.pending.get(sid) is pending:
                 del self.pending[sid]
                 self.redraw()
+        if LOG_EVENTS:
+            print(f"[risposta] {time.strftime('%H:%M:%S')} {sid[:8]} {json.dumps(pending.decision, ensure_ascii=False)}",
+                  file=sys.stderr)
         return pending.decision
 
     def permission_target(self) -> permissions.Pending | None:
@@ -248,21 +259,48 @@ class Board:
         return min(self.pending.values(), key=lambda p: p.created, default=None)
 
     def answer(self, choice: str, session_id: str | None = None) -> bool:
-        """Risponde alla richiesta di `session_id` (o a permission_target) con once/always/deny."""
+        """Risponde alla richiesta di `session_id` (o a permission_target) con once/always/deny.
+        Su una domanda: "once" conferma la scelta multipla, "deny" rifiuta, "always" non fa niente."""
         with self._lock:
             pending = self.pending.get(session_id) if session_id else self.permission_target()
             if pending is None or choice not in permissions.CHOICES:
                 return False
-            del self.pending[pending.session_id]
-            pending.resolve(permissions.decision_for(choice, pending))
-            sess = self.sessions.get(pending.session_id)
-            if sess is not None:
-                sess.state = "working"  # Claude riparte (o riceve il rifiuto) subito
-                self._stop_waves(sess.slot)
-                hue = effects.RED if choice == "deny" else effects.GREEN
-                self._add(effects.Ripple(self.clock(), sess.slot, hue, radius=3, duration=0.6))
-            self.redraw()
+            if pending.questions and choice != "deny":
+                q = pending.question
+                if choice != "once" or q is None or not q.get("multiSelect") or not pending.picked:
+                    return False
+                if pending.confirm():
+                    self._finish(pending, pending.answers_decision(), effects.GREEN)
+                else:
+                    self.redraw()  # restano altre domande
+                return True
+            decision = permissions.decision_for(choice, pending)
+            self._finish(pending, decision, effects.RED if choice == "deny" else effects.GREEN)
             return True
+
+    def choose(self, index: int, session_id: str | None = None) -> bool:
+        """Sceglie l'opzione `index` della domanda in sospeso (di `session_id` o di permission_target)."""
+        with self._lock:
+            pending = self.pending.get(session_id) if session_id else self.permission_target()
+            q = pending.question if pending is not None else None
+            if q is None or not 0 <= index < min(len(q["options"]), len(OPTION_KEYS)):
+                return False
+            if pending.pick(index):
+                self._finish(pending, pending.answers_decision(), effects.GREEN)
+            else:
+                self.redraw()
+            return True
+
+    def _finish(self, pending: permissions.Pending, decision: dict, hue) -> None:
+        """Chiude la richiesta con `decision` e lo mostra sul pad della sessione. Con il lock preso."""
+        del self.pending[pending.session_id]
+        pending.resolve(decision)
+        sess = self.sessions.get(pending.session_id)
+        if sess is not None:
+            sess.state = "working"  # Claude riparte (o riceve il rifiuto) subito
+            self._stop_waves(sess.slot)
+            self._add(effects.Ripple(self.clock(), sess.slot, hue, radius=3, duration=0.6))
+        self.redraw()
 
     def release_all(self) -> None:
         """Chiude le richieste in sospeso (all'uscita): l'app mostra il suo riquadro come sempre."""
@@ -273,6 +311,8 @@ class Board:
 
     # --- pressione dei pad -------------------------------------------------
     def handle_press(self, key: Key, pressed: bool) -> None:
+        if LOG_EVENTS:
+            print(f"[tasto] {time.strftime('%H:%M:%S')} {key} {'giù' if pressed else 'su'}", file=sys.stderr)
         with self._lock:
             if pressed:
                 self._pressed_at[key] = time.time()
@@ -286,7 +326,9 @@ class Board:
                 return
             long_press = time.time() - started >= self.cfg["long_press_seconds"]
             choice = next((c for c, k in PERMISSION_KEYS.items() if k == key), None)
-            if choice is not None:
+            if key in self.option_leds():
+                self.choose(OPTION_KEYS.index(key))
+            elif choice is not None:
                 self.answer(choice)
             elif key == CLEAR_KEY:
                 self.clear_stopped()
@@ -384,12 +426,27 @@ class Board:
             leds[CLEAR_KEY] = Led("amber_low")
         leds.update(self.meter())
         target = self.permission_target()
-        if target is not None:
+        if target is not None and target.questions:
+            if target.question is not None and target.question.get("multiSelect"):
+                leds[PERMISSION_KEYS["once"]] = Led("green" if target.picked else "green_low")
+            leds[PERMISSION_KEYS["deny"]] = Led("red_low")
+        elif target is not None:
             leds[PERMISSION_KEYS["once"]] = Led("green")
             if target.can_always:
                 leds[PERMISSION_KEYS["always"]] = Led("amber")
             leds[PERMISSION_KEYS["deny"]] = Led("red_low")
+        leds.update(self.option_leds())
         return leds
+
+    def option_leds(self) -> dict[Key, Led]:
+        """Riga in basso durante una domanda: opzioni in ambra (verde se scelte), il resto spento."""
+        target = self.permission_target()
+        q = target.question if target is not None else None
+        if q is None:
+            return {}
+        count = min(len(q["options"]), len(OPTION_KEYS))
+        return {key: (Led("green") if i in target.picked else Led("amber")) if i < count else Led()
+                for i, key in enumerate(OPTION_KEYS)}
 
     def meter(self) -> dict[Key, Led]:
         """Colonna di stato (tasti scene, righe 0-6, dal basso): rosso = ti aspetta una risposta
@@ -426,7 +483,10 @@ class Board:
 
         for key in self._held:
             overlay[key] = (3, 3)
+        options = self.option_leds()
         for key, rg in overlay.items():
+            if key in options and key not in self._held:
+                continue  # le onde non coprono le opzioni di una domanda: devono restare leggibili
             base = leds.get(key, Led())
             leds[key] = Led.of(effects.blend(base.rg, rg))  # durante un effetto la luce è fissa
         return leds
@@ -453,8 +513,19 @@ class Board:
         if pending is None:
             return None
         target = self.permission_target()
-        return {"tool": pending.tool_name, "summary": pending.summary, "can_always": pending.can_always,
+        info = {"tool": pending.tool_name, "summary": pending.summary, "can_always": pending.can_always,
                 "target": target is pending}
+        q = pending.question
+        if q is not None:
+            info["question"] = {
+                "header": q.get("header") if isinstance(q.get("header"), str) else "",
+                "options": [o["label"] for o in q["options"][: len(OPTION_KEYS)]],
+                "multi": bool(q.get("multiSelect")),
+                "picked": sorted(pending.picked),
+                "number": len(pending.answers) + 1,
+                "count": len(pending.questions),
+            }
+        return info
 
     def snapshot(self) -> dict:
         with self._lock:
@@ -572,6 +643,17 @@ def make_handler(board: Board, sim: SimLaunchpad | None, on_show: Callable[[], N
                 done = board.answer(action, sid if isinstance(sid, str) else None)
                 self._json(200 if done else 404, board.snapshot())
                 return
+            if action == "option":
+                index, sid = body.get("index"), body.get("session_id")
+                if not self._local():
+                    self._json(403, {"error": "solo da questo computer"})
+                    return
+                if not isinstance(index, int) or isinstance(index, bool):
+                    self._json(400, {"error": 'usa {"action": "option", "index": 0..7, "session_id": "..."}'})
+                    return
+                done = board.choose(index, sid if isinstance(sid, str) else None)
+                self._json(200 if done else 404, board.snapshot())
+                return
             if action == "clear":
                 board.clear_stopped()
                 self._json(200, board.snapshot())
@@ -590,6 +672,9 @@ def make_handler(board: Board, sim: SimLaunchpad | None, on_show: Callable[[], N
                 self._json(400, {"error": "json non valido"})
                 return
             if self.path == "/event":
+                if LOG_EVENTS:
+                    print(f"[evento] {time.strftime('%H:%M:%S')} {body.get('hook_event_name')} "
+                          f"{body.get('tool_name') or ''} {str(body.get('session_id'))[:8]}", file=sys.stderr)
                 decision = None
                 if body.get("hook_event_name") == "PermissionRequest":
                     decision = board.request_permission(body)  # può aspettare che tu risponda dal pad

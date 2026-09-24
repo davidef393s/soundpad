@@ -288,7 +288,12 @@ function buildDevice() {
       const slot = r * 8 + c;
       const b = document.createElement("button");
       b.type = "button"; b.className = "pad";
-      b.addEventListener("click", () => select(slot, true));
+      b.addEventListener("click", () => {
+        // Durante una domanda la riga in basso sono le opzioni, come sul Launchpad
+        const asking = (state?.sessions || []).find((s) => s.permission?.target && s.permission.question);
+        if (r === 7 && asking) act({ action: "option", index: c, session_id: asking.session_id });
+        else select(slot, true);
+      });
       pads.push(b); lp.appendChild(b);
     }
     const s = document.createElement("button");
@@ -316,9 +321,20 @@ function renderDevice() {
   paint(tops[7], sessions.some((s) => s.state === "needs_permission") ? "red" : "off", true);
   // Tondi 5-7: rispondono alla richiesta di permesso "attiva", come sul Launchpad
   const target = sessions.find((s) => s.permission?.target)?.permission;
-  paint(tops[4], target ? "green" : "off", false);
-  paint(tops[5], target?.can_always ? "amber" : "off", false);
+  const tq = target?.question;
+  paint(tops[4], tq ? (tq.multi ? (tq.picked.length ? "green" : "green_low") : "off") : target ? "green" : "off", false);
+  paint(tops[5], !tq && target?.can_always ? "amber" : "off", false);
   paint(tops[6], target ? "red_low" : "off", false);
+  // Domanda di Claude: la riga in basso mostra le opzioni, come sul Launchpad
+  if (tq) {
+    for (let c = 0; c < 8; c++) {
+      const el = pads[56 + c];
+      paint(el, c < tq.options.length ? (tq.picked.includes(c) ? "green" : "amber") : "off", false);
+      el.disabled = c >= tq.options.length;
+      el.title = c < tq.options.length ? tq.options[c] : "";
+      el.setAttribute("aria-label", c < tq.options.length ? `Opzione ${c + 1}: ${tq.options[c]}` : `Pad ${57 + c}: vuoto`);
+    }
+  }
   // Colonna di stato (tondi a destra, righe 0-6 dal basso), come sul Launchpad
   const count = (states) => sessions.filter((s) => states.includes(s.state)).length;
   const meter = [
@@ -381,7 +397,24 @@ function renderList() {
       return b;
     };
     const p = s.permission;
-    if (p) {
+    const q = p?.question;
+    if (q) {
+      // Domanda di Claude: le opzioni come pulsanti, come la riga in basso del Launchpad
+      const ask = document.createElement("div");
+      ask.className = "ask";
+      const head = Object.assign(document.createElement("strong"), {
+        textContent: (q.header || "Domanda") + (q.count > 1 ? ` ${q.number}/${q.count}` : ""),
+      });
+      ask.append(head, " ", p.summary);
+      info.append(ask);
+      actions.append(
+        ...q.options.map((label, i) => button(label, q.picked.includes(i) ? "primary allow" : "",
+          { action: "option", index: i, session_id: s.session_id })),
+        ...(q.multi ? [button("Conferma", "primary", { action: "once", session_id: s.session_id })] : []),
+        button("Rifiuta", "danger", { action: "deny", session_id: s.session_id }),
+      );
+      li.classList.add("asking");
+    } else if (p) {
       // Cosa chiede: strumento + comando/file, così sai cosa stai approvando
       const ask = document.createElement("div");
       ask.className = "ask";

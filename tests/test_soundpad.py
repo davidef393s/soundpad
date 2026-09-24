@@ -18,7 +18,7 @@ from unittest import mock
 
 from soundpad import autostart, install_hooks
 from soundpad.claudeapp import AppSession, SessionIndex
-from soundpad.daemon import ALERT_KEY, CLEAR_KEY, PERMISSION_KEYS, Board, load_config, make_handler, next_state
+from soundpad.daemon import ALERT_KEY, CLEAR_KEY, OPTION_KEYS, PERMISSION_KEYS, Board, load_config, make_handler, next_state
 from soundpad.install_hooks import EVENTS, default_url, install, uninstall
 from soundpad.launchpad import Led, MidiStream, SimLaunchpad, encode_stream, key_event, key_for_note, led_message, note_for
 
@@ -233,8 +233,8 @@ SUGGESTION = {"type": "addRules", "rules": [{"toolName": "Bash", "ruleContent": 
               "behavior": "allow", "destination": "localSettings"}
 
 
-class PermissionTest(unittest.TestCase):
-    """Un PermissionRequest vero via HTTP: il demone lo tiene in sospeso finché non premi un tondo."""
+class HeldRequestBase(unittest.TestCase):
+    """Base per PermissionRequest veri via HTTP, tenuti in sospeso dal demone finché non premi un tasto."""
 
     def setUp(self):
         cfg = static_config()
@@ -250,10 +250,9 @@ class PermissionTest(unittest.TestCase):
         self.server.shutdown()
         self.server.server_close()
 
-    def ask(self, sid: str = "A", suggestions=None) -> dict:
+    def send(self, event: dict) -> dict:
         """Invia la richiesta in un thread; result["body"] arriva quando il demone risponde."""
-        event = ev("PermissionRequest", sid, tool_name="Bash", tool_input={"command": "npm test"},
-                   permission_suggestions=suggestions or [])
+        sid = event["session_id"]
         result: dict = {}
 
         def run():
@@ -278,6 +277,14 @@ class PermissionTest(unittest.TestCase):
     def press(self, key):
         self.pad.press(key, True)
         self.pad.press(key, False)
+
+
+class PermissionTest(HeldRequestBase):
+    """Permessi degli strumenti: tondi in alto 5-7."""
+
+    def ask(self, sid: str = "A", suggestions=None) -> dict:
+        return self.send(ev("PermissionRequest", sid, tool_name="Bash", tool_input={"command": "npm test"},
+                            permission_suggestions=suggestions or []))
 
     def test_accept_once(self):
         result = self.ask()
@@ -330,6 +337,86 @@ class PermissionTest(unittest.TestCase):
         result = self.ask()
         self.assertIsNone(self.decision(result))
         self.assertEqual(self.board.sessions["A"].state, "needs_permission")
+
+
+QUESTIONS = [
+    {"question": "Quale colore?", "header": "Colore", "multiSelect": False,
+     "options": [{"label": "Rosso", "description": "caldo"}, {"label": "Verde"}, {"label": "Ambra"}]},
+    {"question": "Quali giorni?", "header": "Giorni", "multiSelect": True,
+     "options": [{"label": "Lun"}, {"label": "Mar"}, {"label": "Mer"}]},
+]
+
+
+class QuestionTest(HeldRequestBase):
+    """Domande di Claude (AskUserQuestion) a cui si risponde dalla riga in basso."""
+
+    def ask_question(self, questions, sid: str = "A") -> dict:
+        return self.send(ev("PermissionRequest", sid, tool_name="AskUserQuestion", tool_input={"questions": questions}))
+
+    def test_single_question(self):
+        result = self.ask_question(QUESTIONS[:1])
+        self.assertEqual([self.pad.leds.get(k, Led()) for k in OPTION_KEYS[:4]],
+                         [Led("amber"), Led("amber"), Led("amber"), Led()])
+        self.assertNotIn(PERMISSION_KEYS["once"], {k for k, v in self.pad.leds.items() if v != Led()})
+        info = self.board.snapshot()["sessions"][0]["permission"]
+        self.assertEqual((info["summary"], info["question"]["options"]), ("Quale colore?", ["Rosso", "Verde", "Ambra"]))
+        self.press(OPTION_KEYS[1])
+        self.assertEqual(self.decision(result), {"behavior": "allow", "updatedInput": {
+            "questions": QUESTIONS[:1], "answers": {"Quale colore?": "Verde"}}})
+        self.assertEqual(self.pad.leds.get(OPTION_KEYS[0], Led()), Led())  # riga libera di nuovo
+
+    def test_several_questions_and_multi_select(self):
+        result = self.ask_question(QUESTIONS)
+        self.press(OPTION_KEYS[2])  # Ambra: passa alla seconda domanda
+        self.assertIn("A", self.board.pending)
+        self.assertEqual(self.board.snapshot()["sessions"][0]["permission"]["question"]["number"], 2)
+        self.assertEqual(self.pad.leds[PERMISSION_KEYS["once"]], Led("green_low"))  # niente da confermare
+        self.press(PERMISSION_KEYS["once"])
+        self.assertIn("A", self.board.pending)
+        self.press(OPTION_KEYS[2])
+        self.press(OPTION_KEYS[0])
+        self.press(OPTION_KEYS[1])
+        self.press(OPTION_KEYS[1])  # seconda pressione: la spegne
+        self.assertEqual(self.pad.leds[OPTION_KEYS[0]], Led("green"))
+        self.assertEqual(self.pad.leds[OPTION_KEYS[1]], Led("amber"))
+        self.press(PERMISSION_KEYS["once"])
+        self.assertEqual(self.decision(result)["updatedInput"]["answers"],
+                         {"Quale colore?": "Ambra", "Quali giorni?": "Lun, Mer"})
+
+    def test_deny_question(self):
+        result = self.ask_question(QUESTIONS[:1])
+        self.press(PERMISSION_KEYS["deny"])
+        self.assertEqual(self.decision(result)["behavior"], "deny")
+
+    def test_answered_in_app(self):
+        result = self.ask_question(QUESTIONS[:1])
+        self.board.handle_event(ev("PostToolUse", "A", tool_name="AskUserQuestion"))
+        self.assertIsNone(self.decision(result))
+
+    def test_unlit_option_keys_do_nothing(self):
+        self.board.focus_app = lambda *a: self.fail("un pad coperto dalle opzioni non apre la sessione")
+        result = self.ask_question(QUESTIONS[:1])
+        self.press(OPTION_KEYS[5])
+        self.assertIn("A", self.board.pending)
+        self.press(OPTION_KEYS[0])
+        self.assertEqual(self.decision(result)["updatedInput"]["answers"], {"Quale colore?": "Rosso"})
+
+    def test_malformed_questions_are_left_to_the_app(self):
+        result = self.ask_question([{"question": "Senza opzioni", "options": []}])
+        self.assertEqual(self.pad.leds.get(OPTION_KEYS[0], Led()), Led())
+        self.press(PERMISSION_KEYS["deny"])  # resta un permesso qualunque
+        self.assertEqual(self.decision(result)["behavior"], "deny")
+
+    def test_options_stay_readable_over_the_waves(self):
+        self.board.cfg["animations"] = True
+        now = [100.0]
+        self.board.clock = lambda: now[0]
+        result = self.ask_question(QUESTIONS[:1])
+        now[0] += 0.5  # onde rosse in corso
+        frame = self.board.frame()
+        self.assertEqual([frame[k] for k in OPTION_KEYS[:3]], [Led("amber")] * 3)
+        self.press(OPTION_KEYS[0])
+        self.decision(result)
 
 
 class ClaudeAppTest(unittest.TestCase):
