@@ -367,7 +367,14 @@ class QuestionTest(HeldRequestBase):
 
     def test_several_questions_and_multi_select(self):
         result = self.ask_question(QUESTIONS)
+        # pad 7 e 8: prima domanda corrente (lampeggia), seconda da fare
+        self.assertEqual((self.pad.leds[OPTION_KEYS[4]], self.pad.leds[OPTION_KEYS[5]]),
+                         (Led("green", True), Led("green_low")))
+        self.press(OPTION_KEYS[4])  # un pad di avanzamento non è un'opzione
+        self.assertEqual(self.board.snapshot()["sessions"][0]["permission"]["question"]["number"], 1)
         self.press(OPTION_KEYS[2])  # Ambra: passa alla seconda domanda
+        self.assertEqual((self.pad.leds[OPTION_KEYS[4]], self.pad.leds[OPTION_KEYS[5]]),
+                         (Led("green"), Led("green", True)))
         self.assertIn("A", self.board.pending)
         self.assertEqual(self.board.snapshot()["sessions"][0]["permission"]["question"]["number"], 2)
         self.assertEqual(self.pad.leds[PERMISSION_KEYS["once"]], Led("green_low"))  # niente da confermare

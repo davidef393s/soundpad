@@ -72,6 +72,8 @@ PERMISSION_KEYS: dict[str, Key] = {"once": ("top", 0, 4), "always": ("top", 0, 5
 # Riga in basso della griglia: le opzioni di una domanda di Claude (AskUserQuestion), da sinistra.
 # Mentre c'è una domanda coprono le sessioni di quella riga. Il tondo "once" conferma la scelta multipla.
 OPTION_KEYS: list[Key] = [("grid", 7, c) for c in range(8)]
+# Pad a destra della stessa riga che mostrano a quale domanda sei (AskUserQuestion: max 4 domande e 4 opzioni)
+QUESTION_SLOTS = 4
 # Eventi che dicono che la richiesta in sospeso ha già avuto risposta (nell'app)
 ANSWERED_EVENTS = {"PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionDenied",
                    "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd"}
@@ -327,7 +329,7 @@ class Board:
             long_press = time.time() - started >= self.cfg["long_press_seconds"]
             choice = next((c for c, k in PERMISSION_KEYS.items() if k == key), None)
             if key in self.option_leds():
-                self.choose(OPTION_KEYS.index(key))
+                self.choose(OPTION_KEYS.index(key))  # choose ignora i pad oltre le opzioni (avanzamento)
             elif choice is not None:
                 self.answer(choice)
             elif key == CLEAR_KEY:
@@ -439,14 +441,24 @@ class Board:
         return leds
 
     def option_leds(self) -> dict[Key, Led]:
-        """Riga in basso durante una domanda: opzioni in ambra (verde se scelte), il resto spento."""
+        """Riga in basso durante una domanda: da sinistra le opzioni (ambra, verde se scelte); da destra, con più
+        domande, a che punto sei (verde = risposta, verde lampeggiante = corrente, verde tenue = da fare).
+        Serve perché il riquadro nell'app resta sulla prima domanda finché il pad non le ha risposte tutte."""
         target = self.permission_target()
         q = target.question if target is not None else None
         if q is None:
             return {}
         count = min(len(q["options"]), len(OPTION_KEYS))
-        return {key: (Led("green") if i in target.picked else Led("amber")) if i < count else Led()
+        leds = {key: (Led("green") if i in target.picked else Led("amber")) if i < count else Led()
                 for i, key in enumerate(OPTION_KEYS)}
+        total = len(target.questions)
+        first = len(OPTION_KEYS) - QUESTION_SLOTS
+        if total > 1 and count <= first:
+            done = len(target.answers)
+            for i in range(min(total, QUESTION_SLOTS)):
+                led = Led("green") if i < done else Led("green", True) if i == done else Led("green_low")
+                leds[OPTION_KEYS[first + i]] = led
+        return leds
 
     def meter(self) -> dict[Key, Led]:
         """Colonna di stato (tasti scene, righe 0-6, dal basso): rosso = ti aspetta una risposta

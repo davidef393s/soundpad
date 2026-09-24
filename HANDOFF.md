@@ -87,6 +87,9 @@ Il lavoro precedente (23 settembre) è stato fatto sul PC Windows.
   la domanda: pad e app rispondono in parallelo e vince il primo. Questo risponde anche al vecchio dubbio sul
   riquadro dei permessi: almeno per le domande compare subito.
 - Riga in basso = opzioni (max 4 per lo schema dello strumento), scelta multipla confermata dal tondo 5.
+  Pad 5-8 = avanzamento tra le domande (max 4). Serve perché il riquadro dell'app resta sulla prima domanda
+  finché il pad non ha raccolto tutte le risposte (la risposta all'hook è una sola): senza, chi legge l'app
+  risponde tre volte alla prima domanda. Provato dal pad con 3 domande (singola, singola, multipla).
   Risposta: `allow` + `updatedInput` = input originale + `answers` (`{testo domanda: etichetta}`, più etichette
   separate da ", ").
 - **Verificato fino a Claude Code** rispondendo dalla pagina (`/action` con `"option"`) e, con `soundpad.app` e il
@@ -108,7 +111,12 @@ Il lavoro precedente (23 settembre) è stato fatto sul PC Windows.
   `last_input` di `/state`). Se dice "nessun tasto" dopo aver premuto, l'ingresso è guasto.
 - Regola pratica finché non si trova la causa: non riavviare il demone/l'app; se l'ingresso muore, ricollegare il
   cavo (il demone lo riprende da solo).
-- Ipotesi ancora da verificare: l'ingresso muore quando il dispositivo viene riaperto da un altro processo.
+- Dato nuovo (24 settembre, 17:54): con `soundpad.app` chiusa con SIGTERM (chiusura pulita, `close()`) e riaperta,
+  **l'ingresso ha funzionato senza ricollegare il cavo**. Quindi la riapertura in sé non basta a guastarlo. I casi
+  guasti di prima seguivano processi fermati senza `close()` (demone di prova ucciso, script interrotti) o riavvii
+  del demone `uv` sotto launchd. Ipotesi: serve che il processo precedente rilasci l'interfaccia in modo ordinato.
+- Attenzione nelle prove: "0 tasti" è arrivato anche quando semplicemente non si premeva. Verificare sempre con
+  una finestra d'attesa che si interrompe al primo tasto (`last_input` in `/state`).
 
 ## Stato per piattaforma
 

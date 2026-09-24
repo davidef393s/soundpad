@@ -37,7 +37,10 @@ rispondere nell'app come sempre: il demone se ne accorge e lascia perdere. Se no
 `permission_wait_seconds` (90 s), decide l'app come se soundpad non ci fosse.
 
 Quando Claude fa una domanda a scelta multipla (`AskUserQuestion`), la **riga in basso** mostra le opzioni da
-sinistra, in ambra. Premi quella che vuoi; se le domande sono più d'una, la riga passa alla successiva. Nelle
+sinistra, in ambra. Premi quella che vuoi; se le domande sono più d'una, la riga passa alla successiva e i pad
+5-8 mostrano a che punto sei (verde = risposta, verde lampeggiante = corrente, verde tenue = da fare). Il
+riquadro dell'app resta sulla prima domanda finché il pad non ha risposto a tutte: segui il pad o la finestra
+di soundpad. Nelle
 domande a scelta multipla ogni pressione accende o spegne un'opzione (verde = scelta) e il tondo 5 conferma.
 Il tondo 7 rifiuta. "Altro" con testo libero resta nell'app, e rispondere nell'app funziona come sempre.
 

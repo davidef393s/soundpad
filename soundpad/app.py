@@ -15,7 +15,7 @@ import urllib.error
 import urllib.request
 
 from .daemon import Service, load_config
-from .paths import config_path, data_dir
+from .paths import config_path, data_dir, frozen
 
 TITLE = "soundpad"
 
@@ -36,8 +36,9 @@ def icon_image(size: int = 64):
 
 
 def _redirect_output() -> None:
-    """Con --noconsole PyInstaller lascia stdout/stderr a None: i print finirebbero in errore."""
-    if sys.stderr is None or sys.stdout is None:
+    """Output dell'app nel file di log. Su Windows PyInstaller (--noconsole) lascia stdout/stderr a None e i
+    print finirebbero in errore; su macOS un'app aperta dal Finder o con `open` scrive in /dev/null."""
+    if sys.stderr is None or sys.stdout is None or (frozen() and not sys.stderr.isatty()):
         log = open(data_dir() / "soundpad.log", "a", encoding="utf-8", buffering=1)
         sys.stdout = sys.stderr = log
 

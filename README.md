@@ -46,7 +46,9 @@ app as usual: the daemon notices and lets go. If you don't answer within `permis
 the app decides as if soundpad weren't there.
 
 When Claude asks a multiple-choice question (`AskUserQuestion`), the **bottom row** shows its options from
-the left, in amber. Press one to answer; with several questions the row moves to the next one. For
+the left, in amber. Press one to answer; with several questions the row moves to the next one, and pads 5-8
+show where you are (green = answered, flashing green = current, dim green = to do). The app's own dialog
+stays on the first question until the pad has answered them all: follow the pad, or the soundpad window. For
 multiple-choice questions each press toggles an option (green = picked) and round key 5 confirms. Round
 key 7 declines. "Other" with free text stays in the app, and answering in the app works as usual.
 
