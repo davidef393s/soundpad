@@ -460,6 +460,14 @@ function renderStatus() {
   d.lastElementChild.textContent = state ? "demone attivo" : "demone spento";
   p.className = "pill " + (state ? (state.connected ? "on" : "off") : "");
   p.lastElementChild.textContent = !state ? "Launchpad ?" : state.connected ? "Launchpad collegato" : "Launchpad scollegato";
+  // Diagnostica: su macOS i tasti possono smettere di arrivare mentre i LED funzionano
+  const last = state?.last_input;
+  p.title = !state?.connected ? "" : last
+    ? `ultimo tasto ricevuto alle ${new Date(last * 1000).toLocaleTimeString("it-IT")}`
+    : "nessun tasto ricevuto da quando il demone è acceso";
+  if (state?.connected) p.lastElementChild.textContent += last
+    ? ` · tasto ${new Date(last * 1000).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
+    : " · nessun tasto";
   $("banner").classList.toggle("show", !state);
   const waiting = (state?.sessions || []).filter((s) => s.state === "needs_permission").length;
   document.title = waiting ? `(${waiting}) soundpad` : "soundpad";

@@ -13,7 +13,10 @@ def frozen() -> bool:
 
 
 def config_path() -> Path:
-    """config.toml accanto all'eseguibile, oppure nella cartella del progetto."""
+    """config.toml accanto all'exe (Windows), in ~/Library/Application Support/soundpad per soundpad.app
+    (dentro il pacchetto .app non si scrive), oppure nella cartella del progetto. Senza file valgono i default."""
+    if frozen() and sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "soundpad" / "config.toml"
     if frozen():
         return Path(sys.executable).resolve().parent / "config.toml"
     return Path(__file__).resolve().parent.parent / "config.toml"

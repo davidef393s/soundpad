@@ -4,7 +4,7 @@
 
 Launchpad originale (NOVLPD01) come spia delle sessioni di Claude Code, alimentata dagli hook.
 Un pad = una sessione. Funziona su Windows e macOS (su macOS il Launchpad va via USB diretto, senza
-driver). L'exe con finestra e icona per ora esiste solo per Windows. Stato del lavoro in [HANDOFF.md](HANDOFF.md).
+driver). C'è anche un'app con finestra e icona: `soundpad.exe` su Windows, `soundpad.app` su macOS. Stato del lavoro in [HANDOFF.md](HANDOFF.md).
 
 ## Legenda
 
@@ -54,7 +54,22 @@ Si spengono con `animations = false` in `config.toml`.
 
 I colori si cambiano in `config.toml`.
 
-## App (soundpad.exe)
+## App per macOS (soundpad.app)
+
+`uv run --extra app --group build python build.py` costruisce `dist/soundpad.app`: icona nella barra dei menu
+(niente Dock) e finestra con la griglia. libusb è inclusa, per usarla non serve Homebrew.
+
+- chiudere la finestra la nasconde; **Esci** dall'icona nella barra dei menu ferma tutto
+- config facoltativo in `~/Library/Application Support/soundpad/config.toml`
+- per aprire la chat giusta concedi **Accessibilità** a `soundpad.app`. La firma è ad hoc: dopo ogni
+  ricostruzione il permesso va ridato
+- l'avvio all'accesso si accende dalle Impostazioni della finestra: il LaunchAgent punta all'app
+- non tenerla accesa insieme a `uv run soundpad` o al LaunchAgent basato su `uv`: usano la stessa porta
+
+Se i pad smettono di rispondere (nella finestra resta "nessun tasto" dopo una pressione), stacca e riattacca il
+Launchpad: il guasto aperto è descritto in HANDOFF.md.
+
+## App per Windows (soundpad.exe)
 
 `dist\soundpad.exe` fa tutto da solo, senza terminale: avvia il demone, apre una finestra con la griglia e
 mette un'icona vicino all'orologio.

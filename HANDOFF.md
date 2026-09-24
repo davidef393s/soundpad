@@ -89,8 +89,8 @@ Il lavoro precedente (23 settembre) è stato fatto sul PC Windows.
 - Riga in basso = opzioni (max 4 per lo schema dello strumento), scelta multipla confermata dal tondo 5.
   Risposta: `allow` + `updatedInput` = input originale + `answers` (`{testo domanda: etichetta}`, più etichette
   separate da ", ").
-- **Verificato fino a Claude Code** rispondendo dalla pagina (`/action` con `"option"`): risposta accettata nello
-  stesso secondo. **Non verificato dal pad fisico**, per il guasto qui sotto.
+- **Verificato fino a Claude Code** rispondendo dalla pagina (`/action` con `"option"`) e, con `soundpad.app` e il
+  cavo appena ricollegato, **dal pad fisico** (24 settembre, 17:40).
 
 ## Guasto aperto: su macOS i tasti del Launchpad smettono di arrivare
 
@@ -104,8 +104,11 @@ Il lavoro precedente (23 settembre) è stato fatto sul PC Windows.
   anche nella prima apertura dopo il ricollegamento. Non è certo che durante la prova si premessero i tasti.
 - Chrome risulta collegato al dispositivo USB (user client IOKit, probabilmente WebUSB), ma la prima apertura
   ha funzionato anche con Chrome collegato.
-- Prossimo passo: diagnostica che non dipenda da prove a comando. Il demone deve mostrare in pagina e nel log
-  l'ora dell'ultimo tasto ricevuto e i pacchetti in ingresso, così si vede quando smette di funzionare.
+- Diagnostica ora sempre visibile: la pagina mostra "· tasto HH:MM:SS" accanto a "Launchpad collegato" (campo
+  `last_input` di `/state`). Se dice "nessun tasto" dopo aver premuto, l'ingresso è guasto.
+- Regola pratica finché non si trova la causa: non riavviare il demone/l'app; se l'ingresso muore, ricollegare il
+  cavo (il demone lo riprende da solo).
+- Ipotesi ancora da verificare: l'ingresso muore quando il dispositivo viene riaperto da un altro processo.
 
 ## Stato per piattaforma
 
@@ -115,7 +118,7 @@ Il lavoro precedente (23 settembre) è stato fatto sul PC Windows.
 | Titoli delle chat (`SessionIndex`) | fatto | fatto |
 | Aprire la chat giusta | UI Automation (PowerShell) | `macax.py` (API di accessibilità) |
 | Avvio automatico | registro, solo exe | LaunchAgent |
-| App con finestra e icona | `soundpad.exe` | da fare: PyInstaller `--windowed` fa un `.app`, l'icona `.ico` va convertita in `.icns`. Un `.app` firmato darebbe anche un'identità stabile al permesso Accessibilità |
+| App con finestra e icona | `soundpad.exe` | `soundpad.app` (`build.py`): barra dei menu, niente Dock (`LSUIElement`), libusb inclusa, firma ad hoc. Config in `~/Library/Application Support/soundpad/`. Ogni ricostruzione cambia la firma: il permesso Accessibilità va ridato |
 
 Se il Launchpad resta su un computer e Claude gira su un altro: vedi README, "Claude on one computer,
 Launchpad on another". Con il demone in rete, gli endpoint che approvano permessi rispondono solo da

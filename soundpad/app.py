@@ -1,12 +1,14 @@
-"""soundpad come app: finestra con la griglia + icona nell'area di notifica.
+"""soundpad come app: finestra con la griglia + icona nell'area di notifica (Windows) o nella barra dei
+menu (macOS).
 
-Chiudere la finestra la nasconde e basta: il demone resta acceso nell'icona vicino all'orologio.
-"Esci" dal menu dell'icona ferma tutto. Una seconda copia dell'app mostra la finestra della prima.
+Chiudere la finestra la nasconde e basta: il demone resta acceso nell'icona. "Esci" dal menu dell'icona
+ferma tutto. Una seconda copia dell'app mostra la finestra della prima.
 """
 
 from __future__ import annotations
 
 import argparse
+import signal
 import sys
 import threading
 import urllib.error
@@ -47,6 +49,13 @@ def _message(text: str) -> None:
         import ctypes
 
         ctypes.windll.user32.MessageBoxW(None, text, TITLE, 0x30)  # MB_ICONWARNING
+    elif sys.platform == "darwin":
+        import subprocess
+
+        # testo passato come argomento: niente problemi di virgolette dentro lo script AppleScript
+        subprocess.run(["osascript", "-e", "on run argv", "-e",
+                        f'display alert "{TITLE}" message (item 1 of argv) as warning', "-e", "end run", text],
+                       capture_output=True, timeout=120)
 
 
 def _already_running(port: int) -> str | None:
@@ -67,20 +76,26 @@ def _already_running(port: int) -> str | None:
 def main() -> None:
     _redirect_output()
     parser = argparse.ArgumentParser(description="soundpad con finestra e icona")
-    parser.add_argument("--hidden", action="store_true", help="parti solo con l'icona (avvio con Windows)")
+    parser.add_argument("--hidden", action="store_true", help="parti solo con l'icona (avvio all'accesso)")
     parser.add_argument("--sim", action="store_true", help="Launchpad simulato")
     args = parser.parse_args()
 
     import pystray
     import webview
 
+    # SIGTERM (launchd, `kill`) deve passare dalla chiusura ordinata, o il Launchpad USB resta bloccato.
+    # Il ciclo di Cocoa/Win32 non lascia girare i gestori di segnale Python: lo si blocca in tutti i thread
+    # (vale per quelli creati dopo) e lo aspetta un thread apposito con sigwait.
+    if hasattr(signal, "pthread_sigmask"):
+        signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
+
     cfg = load_config(config_path())
     running = _already_running(cfg["port"])
     if running == "app":
         return  # l'altra copia ha già mostrato la sua finestra
     if running == "daemon":
-        _message("soundpad è già acceso in un terminale (uv run soundpad).\n"
-                 "Chiudilo con Ctrl+C e riapri l'app.")
+        _message("soundpad è già acceso fuori dall'app (uv run soundpad, o il LaunchAgent su macOS).\n"
+                 "Chiudilo e riapri l'app.")
         return
 
     window: webview.Window | None = None
@@ -126,6 +141,8 @@ def main() -> None:
         ),
     )
     tray.run_detached()
+    if hasattr(signal, "sigwait"):
+        threading.Thread(target=lambda: (signal.sigwait({signal.SIGTERM}), quit_app(tray)), daemon=True).start()
 
     try:
         webview.start()  # blocca il thread principale finché la finestra non viene distrutta

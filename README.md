@@ -9,8 +9,8 @@ control for your Claude Code sessions, driven by Claude Code's HTTP hooks. One p
 - Approve or deny tool permissions from the pad
 - Press a pad to jump to that chat in the Claude desktop app
 
-Runs on Windows and macOS. On macOS the Launchpad is driven directly over USB, no driver needed. The
-windowed app with a tray icon (`soundpad.exe`) is Windows only for now.
+Runs on Windows and macOS. On macOS the Launchpad is driven directly over USB, no driver needed. There is
+also a windowed app with a tray / menu bar icon: `soundpad.exe` on Windows, `soundpad.app` on macOS.
 
 > Code comments, logs and the web page are in Italian. Only the original Launchpad is supported: later
 > models (S, Mini, MK2, X, Pro) speak a different protocol.
@@ -124,6 +124,21 @@ To remove the hooks: `uv run soundpad-hooks --uninstall`.
 
 The hooks use the port set in `config.toml`. If you change it, run `uv run soundpad-hooks` again (removing
 the old ones first with `--uninstall --url http://127.0.0.1:<OLD-PORT>/event`).
+
+## macOS app (soundpad.app)
+
+`uv run --extra app --group build python build.py` builds `dist/soundpad.app`: a menu bar icon (no Dock icon)
+and a window with the grid. libusb is bundled, so Homebrew isn't needed to run it.
+
+- closing the window hides it; **Esci** (quit) in the menu bar icon stops everything
+- optional config in `~/Library/Application Support/soundpad/config.toml`
+- grant **Accessibility** to `soundpad.app` to open the right chat. The build is ad-hoc signed, so every
+  rebuild needs the permission again
+- turn on start at login from the window's Settings: the LaunchAgent then points to the app
+- don't run it together with `uv run soundpad` or the `uv`-based LaunchAgent: they use the same port
+
+If the pads stop reacting (the status pill in the window keeps saying "nessun tasto" after a press), unplug
+and replug the Launchpad: see HANDOFF.md for the open USB input issue.
 
 ## Windows app (soundpad.exe)
 

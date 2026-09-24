@@ -531,6 +531,7 @@ class Board:
         with self._lock:
             return {
                 "connected": self.pad.connected,
+                "last_input": getattr(self.pad, "last_input", None),  # ultimo tasto ricevuto dal Launchpad
                 "now": time.time(),
                 "colors": self.cfg["colors"],
                 "sessions": [

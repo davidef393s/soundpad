@@ -160,6 +160,7 @@ class MidiLaunchpad:
         self._outport = None
         self._on_press: PressHandler | None = None
         self._lock = threading.Lock()
+        self.last_input: float | None = None  # ora dell'ultimo messaggio ricevuto dal dispositivo
 
     # --- connessione -------------------------------------------------------
     def _find(self, names: list[str]) -> str | None:
@@ -208,6 +209,7 @@ class MidiLaunchpad:
         self._on_press = handler
 
     def _on_message(self, msg) -> None:
+        self.last_input = time.time()
         if self._on_press is None or msg.type not in ("note_on", "note_off", "control_change"):
             return
         event = key_event(*msg.bytes()[:3])
@@ -252,7 +254,9 @@ class UsbLaunchpad:
 
         self._usb = usb
         self._backend = usb.backend.libusb1.get_backend()
-        for path in self.LIBUSB_PATHS:
+        bundled = getattr(sys, "_MEIPASS", None)  # soundpad.app porta con sé libusb
+        paths = ((f"{bundled}/libusb-1.0.0.dylib",) if bundled else ()) + self.LIBUSB_PATHS
+        for path in paths:
             if self._backend is not None:
                 break
             self._backend = usb.backend.libusb1.get_backend(find_library=lambda _name, p=path: p)
@@ -268,6 +272,8 @@ class UsbLaunchpad:
         # indirizzo nuovo, cioè dopo aver staccato e riattaccato il cavo
         self._stuck: tuple[int, int] | None = None
         self._fresh = False  # appena collegato: il primo errore di scrittura vuol dire "bloccato"
+        # Diagnostica per la pagina: su macOS l'ingresso può smettere di funzionare senza errori (HANDOFF.md)
+        self.last_input: float | None = None
 
     # --- connessione -------------------------------------------------------
     @property
@@ -366,6 +372,8 @@ class UsbLaunchpad:
 
     def feed(self, chunk: bytes) -> None:
         """Byte arrivati dal dispositivo -> pressioni. Separato dal thread di lettura per i test."""
+        if chunk:
+            self.last_input = time.time()
         for message in self._stream.feed(chunk):
             event = key_event(*message)
             if event is not None and self._on_press is not None:
