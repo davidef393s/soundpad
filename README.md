@@ -45,6 +45,11 @@ They answer the request of the pad you pressed last, otherwise the oldest one. Y
 app as usual: the daemon notices and lets go. If you don't answer within `permission_wait_seconds` (90 s),
 the app decides as if soundpad weren't there.
 
+When Claude asks a multiple-choice question (`AskUserQuestion`), the **bottom row** shows its options from
+the left, in amber. Press one to answer; with several questions the row moves to the next one. For
+multiple-choice questions each press toggles an option (green = picked) and round key 5 confirms. Round
+key 7 declines. "Other" with free text stays in the app, and answering in the app works as usual.
+
 Right-hand column of round keys (rows 1-7, from the bottom): one key per session. Red = waiting for you
 (permission or error), green = finished, dim amber = working.
 
