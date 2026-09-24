@@ -81,6 +81,32 @@ Il lavoro precedente (23 settembre) è stato fatto sul PC Windows.
 2. Resa delle animazioni sul Launchpad vero (fluidità dei ~570 msg/s di picco).
 3. "Esci" dall'icona e "Avvia con Windows" non provati.
 
+## Domande di Claude dal pad (24 settembre)
+
+- `AskUserQuestion` passa da **PermissionRequest** (dopo un PreToolUse). Mentre l'hook aspetta, l'app mostra
+  la domanda: pad e app rispondono in parallelo e vince il primo. Questo risponde anche al vecchio dubbio sul
+  riquadro dei permessi: almeno per le domande compare subito.
+- Riga in basso = opzioni (max 4 per lo schema dello strumento), scelta multipla confermata dal tondo 5.
+  Risposta: `allow` + `updatedInput` = input originale + `answers` (`{testo domanda: etichetta}`, più etichette
+  separate da ", ").
+- **Verificato fino a Claude Code** rispondendo dalla pagina (`/action` con `"option"`): risposta accettata nello
+  stesso secondo. **Non verificato dal pad fisico**, per il guasto qui sotto.
+
+## Guasto aperto: su macOS i tasti del Launchpad smettono di arrivare
+
+- I LED funzionano sempre, le pressioni a un certo punto non arrivano più: nessun errore, solo timeout
+  sull'endpoint `0x81`. Nel log con `SOUNDPAD_LOG_EVENTS=1` non compaiono righe `[tasto]`.
+- Visto funzionare: prima apertura dopo aver ricollegato il cavo (anche sotto launchd, pressione breve che apre
+  la chat verificata). Visto guasto: dopo riavvii del demone (`launchctl kickstart -k`).
+- Provati senza effetto, con il dispositivo nello stato guasto: `clear_halt` su entrambi gli endpoint,
+  `SET_INTERFACE` alt 0, `set_configuration(0)` + `set_configuration(1)`. `dev.reset()` è escluso (lo fa sparire).
+- **Non affidabile**: l'ultima prova a fasi (prima apertura / pausa / riapertura) ha dato 0 eventi in tutte e tre,
+  anche nella prima apertura dopo il ricollegamento. Non è certo che durante la prova si premessero i tasti.
+- Chrome risulta collegato al dispositivo USB (user client IOKit, probabilmente WebUSB), ma la prima apertura
+  ha funzionato anche con Chrome collegato.
+- Prossimo passo: diagnostica che non dipenda da prove a comando. Il demone deve mostrare in pagina e nel log
+  l'ora dell'ultimo tasto ricevuto e i pacchetti in ingresso, così si vede quando smette di funzionare.
+
 ## Stato per piattaforma
 
 | Funzione | Windows | macOS |
