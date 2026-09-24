@@ -48,6 +48,7 @@ Il lavoro precedente (23 settembre) è stato fatto sul PC Windows.
 - **Apri la chat** su macOS: `macax.py` usa le API di accessibilità native via ctypes. Nella barra laterale la
   chat è un `AXButton` chiamato `"<stato> <titolo>"`, con lo stato nella lingua dell'app ("Inattivo",
   "In esecuzione"). Serve `AXManualAccessibility = true` sull'app perché Chromium costruisca l'albero.
+- Verificato con il pad vero: da un'altra chat la pressione breve riporta alla chat del pad, e viceversa.
 - Misurato: 15-24 ms per trovare e premere il pulsante, contro ~3,4 s con JXA/osascript (un Apple Event per
   ogni proprietà letta).
 - Il permesso Accessibilità va al binario Python reale (`.venv/bin/python` risolto), perché sotto launchd il
