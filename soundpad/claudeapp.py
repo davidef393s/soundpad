@@ -1,16 +1,18 @@
-"""Aprire nell'app desktop Claude la chat di una sessione Claude Code (solo Windows).
+"""Aprire nell'app desktop Claude la chat di una sessione Claude Code (Windows e macOS).
 
 Gli hook danno l'id della sessione CLI (`session_id`). L'app desktop salva per ogni sessione un file
-%APPDATA%\\Claude\\claude-code-sessions\\<account>\\<org>\\local_<id>.json con `sessionId` (local_...),
-`cliSessionId` e `title`: da lì si ricavano titolo e id interno.
+claude-code-sessions/<account>/<org>/local_<id>.json (in %APPDATA%\\Claude su Windows, in
+~/Library/Application Support/Claude su macOS) con `sessionId` (local_...), `cliSessionId` e `title`:
+da lì si ricavano titolo e id interno.
 
 Per aprire la chat:
 1. link ufficiale claude://code/continue?session=local_...  L'app lo accetta solo se un'impostazione
    lato server è attiva per l'account; altrimenti lo ignora in silenzio.
-2. ripiego: UI Automation di Windows. Nella barra laterale ogni chat è un pulsante chiamato
-   "<stato> <titolo>" (es. "Idle Visual synth whiteboard webapp"): lo si cerca e lo si "preme".
-   Dipende dall'interfaccia dell'app e da titoli diversi tra loro: se due chat hanno lo stesso
-   titolo apre la prima della barra laterale.
+2. ripiego: nella barra laterale ogni chat è un pulsante chiamato "<stato> <titolo>", con lo stato nella
+   lingua dell'app (es. "Idle Visual synth whiteboard webapp", "Inattivo Ritorno al progetto"): lo si
+   cerca e lo si "preme". Su Windows con UI Automation (PowerShell), su macOS con le API di
+   accessibilità (macax.py). Dipende dall'interfaccia dell'app e da titoli diversi tra loro: se due
+   chat hanno lo stesso titolo apre la prima della barra laterale.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ import os
 import subprocess
 import sys
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,7 +34,7 @@ class AppSession:
 
 
 def sessions_dir() -> Path | None:
-    if sys.platform == "darwin":  # percorso macOS non ancora verificato su un Mac vero
+    if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "Claude" / "claude-code-sessions"
     appdata = os.environ.get("APPDATA")
     return Path(appdata) / "Claude" / "claude-code-sessions" if appdata else None
@@ -112,20 +115,61 @@ def _log(msg: str) -> None:
     print(f"[soundpad] {msg}", file=sys.stderr)
 
 
-def open_chat(sess: AppSession, use_link: bool = True) -> None:
-    """Porta in primo piano l'app e apre la chat. Bloccante (1-2 s): chiamarla da un thread."""
+def open_chat(sess: AppSession | None, use_link: bool = True) -> None:
+    """Porta in primo piano l'app e, se `sess` c'è, apre la sua chat. Bloccante (1-2 s): da un thread."""
+    if sys.platform == "darwin":
+        _open_chat_mac(sess, use_link)
+    else:
+        _open_chat_windows(sess, use_link)
+
+
+def _is_chat_button(title: str) -> Callable[[str], bool]:
+    """Il pulsante della chat nella barra laterale: "<stato> <titolo>", non "Nuova sessione in <cartella>"."""
+    def match(name: str) -> bool:
+        return name.endswith(f" {title}") and not name.startswith(("Nuova sessione", "New session"))
+    return match
+
+
+_warned_trust = False
+
+
+def _open_chat_mac(sess: AppSession | None, use_link: bool) -> None:
+    global _warned_trust
+    if sess is not None and use_link:
+        subprocess.run(["open", f"claude://code/continue?session={sess.local_id}"], capture_output=True, timeout=10)
+    subprocess.run(["open", "-a", "Claude"], capture_output=True, timeout=10)
+    if sess is None or not sess.title:
+        return  # senza titolo la barra laterale non si può cercare
+    from . import macax
+
+    if not macax.trusted():
+        if not _warned_trust:
+            _warned_trust = True
+            _log(f"per aprire la chat giusta concedi \"Accessibilità\" a {sys.executable} "
+                 "(Impostazioni di Sistema → Privacy e sicurezza → Accessibilità)")
+        return
+    pid = macax.app_pid()
+    if pid is None:
+        _log("app Claude non trovata")
+        return
+    name = macax.press_button(pid, _is_chat_button(sess.title))
+    _log(f"apri '{sess.title}': {'aperta: ' + name if name else 'chat non trovata nella barra laterale'}")
+
+
+def _open_chat_windows(sess: AppSession | None, use_link: bool) -> None:
     from . import winfocus
 
-    if use_link:
+    if sess is not None and use_link:
         try:
             os.startfile(f"claude://code/continue?session={sess.local_id}")  # type: ignore[attr-defined]
         except OSError as exc:
             _log(f"link claude:// non riuscito: {exc}")
     try:
-        winfocus.bring_to_front("claude.exe")
+        if not winfocus.bring_to_front("claude.exe"):
+            _log("finestra di Claude non trovata o non attivabile")
     except OSError as exc:
         _log(f"focus fallito: {exc}")
-    if not sess.title:
+    if sess is None or not sess.title:
         return  # senza titolo la barra laterale non si può cercare
     try:
         result = subprocess.run(

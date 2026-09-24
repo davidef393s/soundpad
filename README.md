@@ -1,187 +1,225 @@
 # soundpad
 
-Launchpad originale (NOVLPD01) come spia delle sessioni di Claude Code, alimentata dagli hook.
-Un pad = una sessione. Il demone funziona su Windows e macOS (su macOS il Launchpad va via USB diretto, senza
-driver); aprire la chat giusta, l'avvio automatico e l'exe sono per ora solo Windows (dettagli e stato del lavoro in [HANDOFF.md](HANDOFF.md)).
+**English** · [Italiano](README.it.md)
 
-## Legenda
+Turns an original 2009 Novation Launchpad (NOVLPD01, red/green LEDs only) into a status light and remote
+control for your Claude Code sessions, driven by Claude Code's HTTP hooks. One pad = one session.
 
-| Pad | Significato |
+- See at a glance which sessions are working, finished, or waiting for you
+- Approve or deny tool permissions from the pad
+- Press a pad to jump to that chat in the Claude desktop app
+
+Runs on Windows and macOS. On macOS the Launchpad is driven directly over USB, no driver needed. The
+windowed app with a tray icon (`soundpad.exe`) is Windows only for now.
+
+> Code comments, logs and the web page are in Italian. Only the original Launchpad is supported: later
+> models (S, Mini, MK2, X, Pro) speak a different protocol.
+
+## Legend
+
+| Pad | Meaning |
 |---|---|
-| verde tenue | sessione aperta, oppure turno finito e già visto |
-| ambra tenue | Claude sta lavorando |
-| **rosso lampeggiante** | aspetta che approvi uno strumento |
-| **verde pieno** | ha finito il turno |
-| verde lampeggiante | ha finito da più di un minuto e non hai risposto |
-| giallo lampeggiante | compattazione del contesto |
-| rosso fisso | turno interrotto da un errore API |
+| dim green | session open, or turn finished and already seen |
+| dim amber | Claude is working |
+| **flashing red** | waiting for you to approve a tool |
+| **bright green** | turn finished |
+| flashing green | finished more than a minute ago and you haven't replied |
+| flashing yellow | compacting the context |
+| steady red | turn stopped by an API error |
 
-Tasti di servizio:
-- **tondo in alto a sinistra**, verde tenue: il demone è in ascolto
-- **tondo in alto a destra**, rosso lampeggiante: almeno una sessione aspetta un permesso
-- **scene in basso a destra**: toglie dalla griglia tutte le sessioni ferme
+Service keys:
+- **top-left round key**, dim green: the daemon is listening
+- **top-right round key**, flashing red: at least one session is waiting for a permission
+- **bottom-right scene key**: removes every stopped session from the grid
 
-Sui pad della griglia:
-- **pressione breve**: apre nell'app Claude la chat di quella sessione e segna il turno come visto
-- **pressione lunga** (1 s): toglie la sessione dalla griglia
+Grid pads:
+- **short press**: opens that session's chat in the Claude app and marks the turn as seen
+- **long press** (1 s): removes the session from the grid
 
-Tondi in alto 5, 6 e 7, accesi solo quando una sessione chiede un permesso:
-- **verde**: accetta una volta
-- **ambra**: accetta sempre (salva la regola che Claude Code propone; spento se non ne propone)
-- **rosso tenue**: rifiuta
+Top round keys 5, 6 and 7, lit only when a session asks for a permission:
+- **green**: allow once
+- **amber**: always allow (saves the rule Claude Code suggests; off when it suggests none)
+- **dim red**: deny
 
-Rispondono alla richiesta del pad che hai premuto per ultimo, altrimenti alla più vecchia. Puoi anche
-rispondere nell'app come sempre: il demone se ne accorge e lascia perdere. Se non rispondi entro
-`permission_wait_seconds` (90 s), decide l'app come se soundpad non ci fosse.
+They answer the request of the pad you pressed last, otherwise the oldest one. You can still answer in the
+app as usual: the daemon notices and lets go. If you don't answer within `permission_wait_seconds` (90 s),
+the app decides as if soundpad weren't there.
 
-Colonna dei tondi a destra (righe 1-7, dal basso): un tondo per sessione. Rosso = ti aspetta
-(permesso o errore), verde = ha finito, ambra tenue = sta lavorando.
+Right-hand column of round keys (rows 1-7, from the bottom): one key per session. Red = waiting for you
+(permission or error), green = finished, dim amber = working.
 
-## Animazioni
+## Animations
 
-- **avvio**: una fascia rosso, ambra, verde attraversa il Launchpad quando si collega
-- **sessione nuova**: il pad lampeggia e manda una piccola onda ambra
-- **al lavoro**: il pad "respira" invece di stare fisso
-- **turno finito**: onda verde verso i pad vicini
-- **permesso**: onda rossa su tutta la griglia, poi il pad lampeggia
-- **sessione tolta**: il pad si spegne sfumando
-- **tasto premuto**: si illumina subito
-- **griglia vuota da 30 s**: screensaver con pioggia verde tenue
+- **boot**: a red, amber, green band sweeps across the Launchpad when it connects
+- **new session**: the pad flashes and sends out a small amber ripple
+- **working**: the pad "breathes" instead of staying steady
+- **turn finished**: green ripple towards neighbouring pads
+- **permission**: red waves across the whole grid, then the pad flashes
+- **session removed**: the pad fades out
+- **key pressed**: lights up immediately
+- **grid empty for 30 s**: screensaver with dim green rain
 
-Si spengono con `animations = false` in `config.toml`.
+Turn them off with `animations = false` in `config.toml`. Colours are set in `config.toml` too.
 
-I colori si cambiano in `config.toml`.
+## Install on macOS
 
-## App (soundpad.exe)
+The original Launchpad has no macOS driver: Novation no longer updates it and the device is not a standard
+USB MIDI device, so it never shows up in Audio MIDI Setup. soundpad talks to it directly over USB with
+libusb.
 
-`dist\soundpad.exe` fa tutto da solo, senza terminale: avvia il demone, apre una finestra con la griglia e
-mette un'icona vicino all'orologio.
-
-- **chiudere la finestra la nasconde**: il Launchpad continua a funzionare. Per riaprirla, doppio clic
-  sull'icona oppure rilancia `soundpad.exe`
-- **Esci** dal menu dell'icona (tasto destro) ferma tutto
-- in fondo alla finestra, **Impostazioni**: installa o togli gli hook, e "Avvia con Windows"
-  (parte nascosto, con la sola icona)
-- `config.toml` va messo accanto a `soundpad.exe` (la build ce lo copia)
-- non tenerlo acceso insieme a `uv run soundpad`: usano la stessa porta. L'app te lo segnala
-
-Per ricostruirlo dopo una modifica al codice:
-```
-uv run --extra app --group build python build.py
-```
-Senza costruire l'exe: `uv run --extra app soundpad-app`. Il log dell'app è in `%LOCALAPPDATA%\soundpad\soundpad.log`.
-
-## Pagina web
-
-Con il demone acceso, apri **http://127.0.0.1:47800/** nel browser. La pagina mostra la griglia com'è sul
-Launchpad e, per ogni pad, il progetto, la cartella, lo stato e da quanto tempo non succede niente. Si aggiorna
-da sola ogni secondo e funziona anche senza Launchpad collegato.
-
-- clic su un pad: evidenzia la sua sessione nell'elenco
-- **Apri**: come la pressione breve (apre la chat nell'app Claude e segna il turno come visto)
-- **Accetta / Sempre / Rifiuta**: compaiono quando la sessione chiede un permesso, con il comando o il file richiesto
-- **Rimuovi**: come la pressione lunga
-- **Togli le ferme**: come il tasto scene in basso a destra
-
-Il titolo della scheda mostra quante sessioni aspettano un permesso, per esempio `(2) soundpad`.
-
-## Installazione su Windows
-
-1. Installa **uv** da PowerShell:
+1. Install **uv** and **libusb**, then get the code:
    ```
-   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+   brew install uv libusb
+   git clone https://github.com/davidef393s/soundpad
    ```
-2. Copia la cartella `soundpad` sul PC.
-3. Collega il Launchpad. Se in Gestione dispositivi non compare come "Launchpad", installa il
-   **Novation USB Driver** da downloads.novationmusic.com (sezione Launchpad MK1).
-4. Chiudi Ableton Live e Novation Components: su Windows una porta MIDI la apre un solo programma alla volta.
-5. Dalla cartella `soundpad`:
+2. Plug in the Launchpad and close any browser tab using it through WebUSB/WebMIDI: only one program at a
+   time can open the device.
+3. From the `soundpad` folder:
    ```
    uv run soundpad
    ```
-   Il tasto tondo in alto a sinistra si accende di verde.
-6. Registra gli hook (fa una copia di backup di `settings.json`):
+   The top-left round key turns green and the terminal prints `[launchpad] collegato via USB`.
+4. Register the hooks (backs up `~/.claude/settings.json` first):
    ```
    uv run soundpad-hooks
    ```
-7. Apri una sessione nella scheda Code dell'app desktop: si accende il primo pad.
-
-Per togliere gli hook: `uv run soundpad-hooks --uninstall`.
-
-Gli hook usano la porta scritta in `config.toml`. Se la cambi, rilancia `uv run soundpad-hooks`
-(e togli prima quelli vecchi con `--uninstall --url http://127.0.0.1:<VECCHIA-PORTA>/event`).
-
-## Installazione su macOS
-
-Su macOS il Launchpad originale non ha driver: Novation non lo aggiorna più e il dispositivo non è un MIDI
-standard, quindi non compare in "Configurazione MIDI Audio". soundpad gli parla direttamente via USB con
-libusb, senza installare driver.
-
-1. Installa **uv** e **libusb**:
+5. To open the right chat on a short press: System Settings → Privacy & Security → **Accessibility** →
+   **+**, press ⌘⇧G and paste the path of the project's Python, which you get with
+   `uv run python -c "import os,sys; print(os.path.realpath(sys.executable))"`. Without this permission a
+   press only brings the app to the front. If uv moves to a different Python version, grant it again.
+6. Start at login (a LaunchAgent in `~/Library/LaunchAgents`), from the web page (Settings → "Avvia
+   all'accesso") or with:
    ```
-   brew install uv libusb
+   uv run python -c "from soundpad import autostart; autostart.set_enabled(True)"
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.github.davidef393s.soundpad.plist
    ```
-2. Collega il Launchpad e chiudi le pagine del browser che usano WebUSB/WebMIDI con il Launchpad: il
-   dispositivo lo apre un solo programma alla volta.
-3. Dalla cartella `soundpad`:
+   The second command starts it now instead of at the next login. Logs go to `~/Library/Logs/soundpad/`.
+   Restart it after changing the code with `launchctl kickstart -k gui/$(id -u)/io.github.davidef393s.soundpad`.
+
+If the Launchpad stops responding (LEDs frozen, USB write errors in the log), unplug it and plug it back in:
+the daemon reconnects within 2 seconds.
+
+## Install on Windows
+
+1. Install **uv** from PowerShell:
+   ```
+   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+   ```
+2. Get the code: `git clone https://github.com/davidef393s/soundpad` (or download the zip from GitHub).
+3. Plug in the Launchpad. If Device Manager doesn't list it as "Launchpad", install the
+   **Novation USB Driver** from downloads.novationmusic.com (Launchpad MK1 section).
+4. Close Ableton Live and Novation Components: on Windows only one program at a time can open a MIDI port.
+5. From the `soundpad` folder:
    ```
    uv run soundpad
    ```
-   Il tasto tondo in alto a sinistra si accende di verde e nel terminale compare
-   `[launchpad] collegato via USB`.
-4. Registra gli hook: `uv run soundpad-hooks`.
+   The top-left round key turns green.
+6. Register the hooks (backs up `settings.json` first):
+   ```
+   uv run soundpad-hooks
+   ```
+7. Open a session in the Code tab of the desktop app: the first pad lights up.
 
-Se il Launchpad smette di rispondere (LED fermi, errori di scrittura USB nel terminale), stacca e riattacca
-il cavo: il demone lo ricollega da solo entro 2 secondi.
+To remove the hooks: `uv run soundpad-hooks --uninstall`.
 
-## Claude su un computer, Launchpad su un altro
+The hooks use the port set in `config.toml`. If you change it, run `uv run soundpad-hooks` again (removing
+the old ones first with `--uninstall --url http://127.0.0.1:<OLD-PORT>/event`).
 
-Serve se usi Claude sul Mac e il Launchpad è collegato al PC Windows.
+## Windows app (soundpad.exe)
 
-1. Sul PC, in `config.toml`: `host = "0.0.0.0"`. Al primo avvio consenti l'accesso nel firewall di Windows,
-   solo per le reti private.
-2. Sul Mac: `uv run soundpad-hooks --url http://<IP-DEL-PC>:47800/event`.
+`dist\soundpad.exe` does everything without a terminal: it starts the daemon, opens a window with the grid
+and puts an icon next to the clock.
 
-Se il router cambia l'IP del PC, gli hook smettono di arrivare. Conviene riservargli un IP fisso dal router.
+- **closing the window hides it**: the Launchpad keeps working. Double-click the icon or launch
+  `soundpad.exe` again to bring it back
+- **Esci** (quit) in the icon's right-click menu stops everything
+- at the bottom of the window, **Settings**: install or remove the hooks, and start with Windows (hidden,
+  icon only)
+- `config.toml` goes next to `soundpad.exe` (the build copies it there)
+- don't run it together with `uv run soundpad`: they use the same port. The app tells you
 
-Attenzione: il demone non ha password. Con `host = "0.0.0.0"` chiunque sulla stessa rete può accendere pad
-o portare in primo piano l'app Claude. Usalo solo su reti di cui ti fidi.
+To rebuild it after changing the code:
+```
+uv run --extra app --group build python build.py
+```
+Without building the exe: `uv run --extra app soundpad-app`. The app log is in
+`%LOCALAPPDATA%\soundpad\soundpad.log`.
 
-## Prova senza Launchpad
+## Web page
+
+With the daemon running, open **http://127.0.0.1:47800/**. It shows the grid as it is on the Launchpad and,
+for each pad, the project, folder, state and time since the last event. It refreshes every second and works
+without a Launchpad too.
+
+- click a pad: highlights its session in the list
+- **Apri** (open): same as a short press
+- **Accetta / Sempre / Rifiuta** (allow / always / deny): appear when the session asks for a permission,
+  with the requested command or file
+- **Rimuovi** (remove): same as a long press
+- **Togli le ferme** (clear stopped): same as the bottom-right scene key
+
+The tab title shows how many sessions are waiting for a permission, e.g. `(2) soundpad`.
+
+## Claude on one computer, Launchpad on another
+
+1. On the computer with the Launchpad, in `config.toml`: `host = "0.0.0.0"`. On Windows, allow access in
+   the firewall prompt for private networks only.
+2. On the computer running Claude: `uv run soundpad-hooks --url http://<LAUNCHPAD-COMPUTER-IP>:47800/event`.
+
+If the router changes that IP, the hooks stop arriving: reserve a fixed IP for it in the router.
+
+Warning: the daemon has no password. With `host = "0.0.0.0"` anyone on the same network can light pads or
+bring the Claude app to the front. Only use it on networks you trust. Endpoints that approve permissions
+only answer requests from 127.0.0.1.
+
+## Try it without a Launchpad
 
 ```
 uv run soundpad --sim
 ```
-disegna la griglia nel terminale. Per simulare eventi e pressioni:
+draws the grid in the terminal. To simulate events and presses:
 ```
 curl -X POST localhost:47800/event -d '{"session_id":"A","hook_event_name":"PermissionRequest"}'
 curl -X POST localhost:47800/press -d '{"row":0,"col":0}'
 curl localhost:47800/state
 ```
-In PowerShell `curl` è un'altra cosa e le virgolette funzionano diversamente. Usa:
-```
-Invoke-RestMethod -Method Post http://127.0.0.1:47800/event -Body '{"session_id":"A","hook_event_name":"PermissionRequest"}'
-Invoke-RestMethod http://127.0.0.1:47800/state
-```
 
-## Test
+## Tests
 
-Solo libreria standard, non serve il Launchpad:
+Standard library only, no Launchpad needed:
 ```
 uv run python -m unittest -v
 ```
 
-## Versione di Python
+## Python version
 
-Il progetto usa Python 3.12 (file `.python-version`): `python-rtmidi` non ha pacchetti già compilati
-per Windows con Python 3.13, e senza un compilatore C++ l'installazione fallisce. uv scarica da solo
-Python 3.12 se non è installato.
+The project pins Python 3.12 (`.python-version`): `python-rtmidi` has no prebuilt wheels for Windows on
+Python 3.13, and without a C++ compiler the install fails. uv downloads Python 3.12 if it's missing.
 
-## Limiti noti
+## How it works
 
-- Se il demone è spento, gli hook falliscono senza bloccare Claude. L'app può mostrare un avviso di hook non riuscito.
-- Per aprire la chat giusta soundpad "clicca" la chat nella barra laterale dell'app (UI Automation di
-  Windows): se due chat hanno lo stesso titolo apre la prima, e un aggiornamento dell'app può romperlo.
-  Le sessioni avviate da un terminale portano in primo piano solo l'app.
-- Le sessioni cloud non leggono `~/.claude/settings.json`: non accendono pad.
-- Riavviando il demone la griglia riparte vuota. Ogni sessione ricompare al suo evento successivo, anche in una posizione diversa.
+- Claude Code sends every hook event (`SessionStart`, `UserPromptSubmit`, `PermissionRequest`, `Stop`, …)
+  as an HTTP POST to the daemon on `127.0.0.1:47800`. The daemon answers non-permission events with an empty
+  `204`, so Claude Code ignores the reply.
+- A `PermissionRequest` is held open until you press a key (or the timeout): the answer goes back in the
+  same HTTP response, in the format described in the
+  [hooks documentation](https://code.claude.com/docs/en/hooks).
+- To find the chat of a hook's `session_id`, the daemon reads the desktop app's session files
+  (`claude-code-sessions/<account>/<org>/local_*.json`, field `cliSessionId`) and then presses that chat's
+  button in the app's sidebar through the OS accessibility APIs.
+- On macOS the Launchpad's USB interface has two 8-byte interrupt endpoints carrying raw MIDI bytes with
+  running status. At low speed that's one packet every ~8 ms, about 475 LED updates per second.
+
+## Known limits
+
+- If the daemon is off, the hooks fail without blocking Claude. The app may show a failed-hook notice.
+- Opening the right chat "clicks" it in the app's sidebar: with two chats sharing a title it opens the
+  first, it can't find a chat whose folder group is collapsed, and an app update can break it. Sessions
+  started from a terminal only bring the app to the front.
+- Cloud sessions don't read `~/.claude/settings.json`, so they don't light pads.
+- Restarting the daemon empties the grid. Each session comes back on its next event, possibly on a
+  different pad.
+
+## License
+
+[MIT](LICENSE)

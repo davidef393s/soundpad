@@ -39,6 +39,23 @@ Il lavoro precedente (23 settembre) è stato fatto sul PC Windows.
 - Il primo pacchetto dopo il collegamento contiene rilasci finti (`90 00 00 b0 68 00 69 00`): innocui, perché
   `handle_press` ignora i rilasci senza pressione.
 - Chrome può tenere aperto il dispositivo (una pagina WebUSB): se `claim_interface` fallisce, controllare lì.
+- Un processo ucciso a metà trasferimento lascia il Launchpad bloccato allo stesso modo. Per questo il demone
+  gestisce SIGTERM (launchd) passando da `service.stop()` → `UsbLaunchpad.close()`: verificato con
+  `launchctl kickstart -k`, il Launchpad resta sano.
+
+## Mac: apertura della chat e avvio automatico (24 settembre)
+
+- **Apri la chat** su macOS: `macax.py` usa le API di accessibilità native via ctypes. Nella barra laterale la
+  chat è un `AXButton` chiamato `"<stato> <titolo>"`, con lo stato nella lingua dell'app ("Inattivo",
+  "In esecuzione"). Serve `AXManualAccessibility = true` sull'app perché Chromium costruisca l'albero.
+- Misurato: 15-24 ms per trovare e premere il pulsante, contro ~3,4 s con JXA/osascript (un Apple Event per
+  ogni proprietà letta).
+- Il permesso Accessibilità va al binario Python reale (`.venv/bin/python` risolto), perché sotto launchd il
+  "processo responsabile" è lui. Per esplorare l'albero senza dare il permesso all'app Claude: un lavoro
+  launchd una tantum che lancia lo stesso Python.
+- **Avvio automatico**: LaunchAgent `io.github.davidef393s.soundpad`, senza KeepAlive (con la porta occupata
+  il demone esce e launchd lo rilancerebbe in loop). Log in `~/Library/Logs/soundpad/`.
+- `focus_command` non ha più un default per macOS: se è impostato nel config vince e soundpad non apre la chat.
 
 ## Scoperte da ricordare
 
@@ -63,27 +80,16 @@ Il lavoro precedente (23 settembre) è stato fatto sul PC Windows.
 2. Resa delle animazioni sul Launchpad vero (fluidità dei ~570 msg/s di picco).
 3. "Esci" dall'icona e "Avvia con Windows" non provati.
 
-## Continuare sul Mac
+## Stato per piattaforma
 
-Il demone, gli hook, la pagina, gli effetti e i permessi sono multipiattaforma. Solo Windows:
-
-| Funzione | Su macOS oggi | Idea |
+| Funzione | Windows | macOS |
 |---|---|---|
-| Aprire la chat giusta (`claudeapp.open_chat`, UI Automation) | porta in primo piano l'app con `open -a Claude` | Accessibility API (AppleScript/`osascript` o pyobjc) sul pulsante della barra laterale; oppure il link `claude://` se il gate si accende |
-| Titoli delle chat (`SessionIndex`) | **verificato**: `~/Library/Application Support/Claude/claude-code-sessions/<account>/<org>/local_*.json`, stessi campi di Windows | fatto |
-| Launchpad | **fatto**: `UsbLaunchpad` via libusb | — |
-| `winfocus.py` | non usato | non serve: `open -a Claude` basta |
-| Avvio automatico (`autostart.py`) | non disponibile | LaunchAgent in `~/Library/LaunchAgents` |
-| Build (`build.py`) | non provata | PyInstaller su macOS fa un `.app` con `--windowed`; l'icona `.ico` va convertita in `.icns` |
+| Launchpad | `MidiLaunchpad` (driver Novation) | `UsbLaunchpad` (libusb) |
+| Titoli delle chat (`SessionIndex`) | fatto | fatto |
+| Aprire la chat giusta | UI Automation (PowerShell) | `macax.py` (API di accessibilità) |
+| Avvio automatico | registro, solo exe | LaunchAgent |
+| App con finestra e icona | `soundpad.exe` | da fare: PyInstaller `--windowed` fa un `.app`, l'icona `.ico` va convertita in `.icns`. Un `.app` firmato darebbe anche un'identità stabile al permesso Accessibilità |
 
-Se il Launchpad resta sul PC e Claude gira sul Mac: sul PC `host = "0.0.0.0"`, sul Mac
-`uv run soundpad-hooks --url http://<IP-DEL-PC>:47800/event` (vedi README). Con il demone in rete, gli endpoint
-che approvano permessi rispondono solo da 127.0.0.1: dal Mac si approva dal pad o dall'app, non dalla pagina.
-
-Primi passi sul Mac:
-```
-curl -LsSf https://astral.sh/uv/install.sh | sh
-cd soundpad
-uv run python -m unittest
-uv run soundpad --sim
-```
+Se il Launchpad resta su un computer e Claude gira su un altro: vedi README, "Claude on one computer,
+Launchpad on another". Con il demone in rete, gli endpoint che approvano permessi rispondono solo da
+127.0.0.1: dall'altro computer si approva dal pad o dall'app, non dalla pagina.

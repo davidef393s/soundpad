@@ -29,7 +29,7 @@ DEFAULT_CONFIG = {
     "port": 47800,
     "long_press_seconds": 1.0,
     "session_ttl_hours": 12,
-    # "Apri" apre la chat della sessione nell'app desktop (solo Windows), non solo l'app
+    # "Apri" apre la chat della sessione nell'app desktop (Windows e macOS), non solo l'app
     "open_chat": True,
     # Animazioni sul Launchpad (onde, respiro, avvio, screensaver). false = luci fisse come prima
     "animations": True,
@@ -51,11 +51,9 @@ DEFAULT_CONFIG = {
         "seen": ["green_low", False],
         "error": ["red", False],
     },
-    # Comando per portare in primo piano l'app. Su Windows, se non è configurato,
-    # si usa winfocus (ctypes): AppActivate farebbe solo lampeggiare l'icona sulla barra.
-    "focus_command": {
-        "Darwin": ["open", "-a", "Claude"],
-    },
+    # Comando per portare in primo piano l'app al posto di quello predefinito, per sistema ("Darwin",
+    # "Windows", "Linux"). Se c'è, soundpad non apre la chat della sessione.
+    "focus_command": {},
 }
 
 # Tasto scene in basso a destra: dimentica tutte le sessioni ferme (done/idle/seen/error)
@@ -337,27 +335,25 @@ class Board:
 
     def focus_app(self, sess: Session | None = None) -> None:
         """Porta in primo piano l'app Claude e, se possibile, apre la chat della sessione."""
-        cmd = self.cfg["focus_command"].get(platform.system())
-        if (not cmd and platform.system() == "Windows" and sess is not None and sess.local_id
-                and self.cfg["open_chat"]):
-            from . import claudeapp
-
-            # Link + UI Automation richiedono 1-2 s: fuori dal thread del Launchpad o dell'HTTP
-            app = claudeapp.AppSession(sess.local_id, sess.title)
-            threading.Thread(target=claudeapp.open_chat, args=(app,), daemon=True).start()
-        elif not cmd and platform.system() == "Windows":
-            from . import winfocus
-
-            try:
-                if not winfocus.bring_to_front("claude.exe"):
-                    print("[soundpad] finestra di Claude non trovata o non attivabile", file=sys.stderr)
-            except OSError as exc:
-                print(f"[soundpad] focus fallito: {exc}", file=sys.stderr)
-        elif cmd:
+        system = platform.system()
+        cmd = self.cfg["focus_command"].get(system)
+        if cmd:  # comando scelto nel config: vince su tutto
             try:
                 subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except OSError as exc:
                 print(f"[soundpad] focus fallito: {exc}", file=sys.stderr)
+            return
+        if system not in ("Windows", "Darwin"):
+            return
+        from . import claudeapp
+
+        if sess is not None and sess.local_id and self.cfg["open_chat"]:
+            app = claudeapp.AppSession(sess.local_id, sess.title)
+        else:
+            app = None  # porta in primo piano l'app e basta
+        # Link, focus e ricerca nella barra laterale possono richiedere 1-2 s: fuori dal thread del
+        # Launchpad o dell'HTTP
+        threading.Thread(target=claudeapp.open_chat, args=(app,), daemon=True).start()
 
     # --- disegno -----------------------------------------------------------
     def expire_stale(self) -> None:
@@ -659,7 +655,7 @@ class Service:
         self.cfg = cfg
         self.sim = SimLaunchpad(quiet=quiet) if sim else None
         self.pad = self.sim or make_launchpad()
-        # Titoli delle chat dall'app desktop; l'apertura della chat giusta è solo Windows (focus_app)
+        # Titoli delle chat dall'app desktop, per mostrarli e per aprire la chat giusta (focus_app)
         index = SessionIndex() if sys.platform in ("win32", "darwin") else None
         self.board = Board(self.pad, cfg, index)
         # Può sollevare OSError se la porta è occupata (demone già acceso)

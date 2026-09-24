@@ -372,6 +372,17 @@ class ClaudeAppTest(unittest.TestCase):
             board.open(0)
             self.assertIs(opened[0], sess)
 
+    def test_chat_button_match(self):
+        from soundpad.claudeapp import _is_chat_button
+
+        match = _is_chat_button("soundpad")
+        self.assertTrue(match("Inattivo soundpad"))
+        self.assertTrue(match("Idle soundpad"))
+        self.assertFalse(match("Nuova sessione in soundpad"))  # la cartella, non la chat
+        self.assertFalse(match("New session in soundpad"))
+        self.assertFalse(match("soundpad"))  # intestazione della cartella nella barra laterale
+        self.assertFalse(match("Inattivo altro soundpad-bis"))
+
     def test_missing_folder_is_harmless(self):
         self.assertIsNone(SessionIndex(Path("non-esiste-davvero")).lookup("x"))
 

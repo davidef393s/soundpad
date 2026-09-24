@@ -11,7 +11,7 @@ long_press_seconds = 1.0
 # Una sessione senza eventi da questo numero di ore sparisce dalla griglia
 session_ttl_hours = 12
 
-# "Apri" apre la chat della sessione nell'app Claude (solo Windows); false = porta in primo piano l'app e basta
+# "Apri" apre la chat della sessione nell'app Claude (Windows e macOS); false = porta in primo piano l'app e basta
 open_chat = true
 
 # Animazioni sul Launchpad: onde, "al lavoro" che respira, avvio, screensaver. false = luci fisse
