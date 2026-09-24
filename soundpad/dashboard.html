@@ -206,8 +206,8 @@
     </div>
     <div class="setting" id="autostart-row" hidden>
       <div>
-        <div class="name">Avvia con Windows</div>
-        <div class="meta">parte nascosto, con la sola icona vicino all'orologio</div>
+        <div class="name">Avvia all'accesso</div>
+        <div class="meta" id="autostart-meta">parte nascosto, con la sola icona vicino all'orologio</div>
       </div>
       <label class="switch"><input type="checkbox" id="autostart"><span></span></label>
     </div>
@@ -480,6 +480,7 @@ function renderSettings() {
   $("hooks-btn").className = "btn" + (on ? "" : " primary");
   $("autostart-row").hidden = settings.autostart === null;
   $("autostart").checked = !!settings.autostart;
+  if (/Mac/.test(navigator.userAgent)) $("autostart-meta").textContent = "vale dal prossimo accesso a macOS";
 }
 
 async function loadSettings(path = "/app/settings", body = null) {

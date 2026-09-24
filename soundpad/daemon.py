@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import signal
 import subprocess
 import sys
 import threading
@@ -702,6 +703,12 @@ class Service:
         self.server.shutdown()
         self.server.server_close()
         self.pad.clear()
+        if hasattr(self.pad, "close"):
+            self.pad.close()  # USB: rilascia il dispositivo, o il prossimo avvio lo trova bloccato
+
+
+def _interrupt(*_) -> None:
+    raise KeyboardInterrupt
 
 
 def main() -> None:
@@ -712,6 +719,8 @@ def main() -> None:
     args = parser.parse_args()
 
     service = Service(load_config(args.config), sim=args.sim, quiet=args.quiet)
+    # launchd (e `kill`) fermano il demone con SIGTERM: come Ctrl+C, per passare da service.stop()
+    signal.signal(signal.SIGTERM, _interrupt)
     service.start()
     try:
         service.run()

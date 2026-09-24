@@ -20,8 +20,11 @@ def config_path() -> Path:
 
 
 def data_dir() -> Path:
-    """Cartella per il log dell'app (%LOCALAPPDATA%\\soundpad su Windows)."""
-    base = os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "state"
+    """Cartella per il log (%LOCALAPPDATA%\\soundpad su Windows, ~/Library/Logs/soundpad su macOS)."""
+    if sys.platform == "darwin":
+        base = Path.home() / "Library" / "Logs"
+    else:
+        base = os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "state"
     path = Path(base) / "soundpad"
     path.mkdir(parents=True, exist_ok=True)
     return path

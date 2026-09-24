@@ -259,10 +259,15 @@ class UsbLaunchpad:
         if self._backend is None:
             raise RuntimeError("libusb non trovata: installala con `brew install libusb`")
         self._dev = None
+        self._reader: threading.Thread | None = None
         self._pending: list[tuple[int, int, int]] = []
         self._on_press: PressHandler | None = None
         self._lock = threading.Lock()
         self._stream = MidiStream()
+        # (bus, indirizzo) di un Launchpad che non risponde: si riprova solo quando ricompare con un
+        # indirizzo nuovo, cioè dopo aver staccato e riattaccato il cavo
+        self._stuck: tuple[int, int] | None = None
+        self._fresh = False  # appena collegato: il primo errore di scrittura vuol dire "bloccato"
 
     # --- connessione -------------------------------------------------------
     @property
@@ -275,6 +280,9 @@ class UsbLaunchpad:
             return False  # uno scollegamento lo scopre il thread di lettura (o una scrittura che fallisce)
         dev = self._usb.core.find(idVendor=self.VENDOR, idProduct=self.PRODUCT, backend=self._backend)
         if dev is None:
+            self._stuck = None
+            return False
+        if (dev.bus, dev.address) == self._stuck:
             return False
         try:
             # Solo se serve: riconfigurare un dispositivo già configurato blocca gli endpoint di questo
@@ -293,12 +301,34 @@ class UsbLaunchpad:
             self._dev = dev
             self._stream = MidiStream()
             self._pending = []
-        threading.Thread(target=self._read_loop, args=(dev,), daemon=True).start()
-        print("[launchpad] collegato via USB", file=sys.stderr)
+            self._fresh = True
+        self._reader = threading.Thread(target=self._read_loop, args=(dev,), daemon=True)
+        self._reader.start()
         self.clear()
+        if not self.connected:
+            return False  # la prima scrittura è fallita: _write ha già spiegato cosa fare
+        print("[launchpad] collegato via USB", file=sys.stderr)
         return True
 
-    def _close(self, dev) -> None:
+    def close(self) -> None:
+        """Chiusura ordinata: ferma la lettura e rilascia l'interfaccia prima di uscire.
+
+        Un processo che muore con un trasferimento in corso lascia il Launchpad bloccato (Errno 5 alla prima
+        scrittura) fino a quando si stacca il cavo.
+        """
+        with self._lock:
+            dev, self._dev = self._dev, None
+        if dev is None:
+            return
+        if self._reader is not None:
+            self._reader.join(timeout=1)  # la lettura ha un timeout di 500 ms
+        try:
+            self._usb.util.release_interface(dev, 0)
+        except Exception:
+            pass
+        self._usb.util.dispose_resources(dev)
+
+    def _close(self, dev, quiet: bool = False) -> None:
         """Chiude `dev` se è ancora quello in uso. Da chiamare con il lock preso."""
         if self._dev is not dev:
             return
@@ -309,7 +339,8 @@ class UsbLaunchpad:
         except Exception:
             pass
         self._usb.util.dispose_resources(dev)
-        print("[launchpad] scollegato", file=sys.stderr)
+        if not quiet:
+            print("[launchpad] scollegato", file=sys.stderr)
 
     # --- input -------------------------------------------------------------
     def on_press(self, handler: PressHandler) -> None:
@@ -350,8 +381,15 @@ class UsbLaunchpad:
             for i in range(0, len(data), self.PACKET):
                 dev.write(self.EP_OUT, data[i:i + self.PACKET], timeout=1000)
         except self._usb.core.USBError as exc:
-            print(f"[launchpad] scrittura USB fallita: {exc}", file=sys.stderr)
-            self._close(dev)
+            if self._fresh:
+                self._stuck = (dev.bus, dev.address)
+                print(f"[launchpad] il Launchpad non risponde ({exc}): stacca e riattacca il cavo USB",
+                      file=sys.stderr)
+            else:
+                print(f"[launchpad] scrittura USB fallita: {exc}", file=sys.stderr)
+            self._close(dev, quiet=self._fresh)
+            return
+        self._fresh = False
 
     def set(self, key: Key, led: Led) -> None:
         with self._lock:

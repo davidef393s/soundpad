@@ -1,7 +1,7 @@
 # soundpad: stato del lavoro
 
 Aggiornato il 24 settembre 2026, sessione sul Mac (Apple Silicon, macOS 26) con il Launchpad collegato via USB.
-Il lavoro precedente (23 settembre) è stato fatto sul PC Windows "DavidePC".
+Il lavoro precedente (23 settembre) è stato fatto sul PC Windows.
 
 ## Cosa funziona (provato sul PC Windows con il Launchpad vero)
 
@@ -43,7 +43,7 @@ Il lavoro precedente (23 settembre) è stato fatto sul PC Windows "DavidePC".
 ## Scoperte da ricordare
 
 - Il link `claude://code/continue?session=local_...` esiste nell'app ma è dietro un'impostazione lato server
-  (gate `4217215889`), spenta per questo account: l'app lo ignora in silenzio. Non aggirarlo modificando l'app.
+ , spenta per questo account: l'app lo ignora in silenzio. Non aggirarlo modificando l'app.
   Se Anthropic lo attiva, soundpad lo usa già.
 - Le sessioni dell'app desktop hanno id `local_...` diverso dal `session_id` degli hook: la corrispondenza sta
   nel campo `cliSessionId` dei file sopra.

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import plistlib
+import sys
 import threading
 import time
 import unittest
@@ -12,8 +14,9 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
-from soundpad import install_hooks
+from soundpad import autostart, install_hooks
 from soundpad.claudeapp import AppSession, SessionIndex
 from soundpad.daemon import ALERT_KEY, CLEAR_KEY, PERMISSION_KEYS, Board, load_config, make_handler, next_state
 from soundpad.install_hooks import EVENTS, default_url, install, uninstall
@@ -448,6 +451,7 @@ class HttpTest(unittest.TestCase):
         except urllib.error.HTTPError as exc:
             return exc.code, {}
 
+    @mock.patch.object(autostart, "supported", lambda: False)
     def test_app_hooks_toggle(self):
         with TemporaryDirectory() as tmp:
             settings = Path(tmp) / "settings.json"
@@ -459,13 +463,14 @@ class HttpTest(unittest.TestCase):
                 code, data = self.app_post("/app/hooks", {"installed": True})
                 self.assertEqual(code, 200)
                 self.assertTrue(data["hooks_installed"])
-                self.assertIsNone(data["autostart"])  # non è l'exe
+                self.assertIsNone(data["autostart"])  # avvio automatico non disponibile
                 code, data = self.app_post("/app/hooks", {"installed": False})
                 self.assertFalse(data["hooks_installed"])
                 self.assertEqual(json.loads(settings.read_text(encoding="utf-8")), {})
             finally:
                 install_hooks.SETTINGS_PATH = old
 
+    @mock.patch.object(autostart, "supported", lambda: False)
     def test_app_show_needs_window(self):
         self.assertEqual(self.app_post("/app/show", {})[0], 404)  # demone senza finestra
         self.assertEqual(self.app_post("/app/autostart", {"enabled": True})[0], 500)
@@ -475,6 +480,23 @@ class HttpTest(unittest.TestCase):
         with urllib.request.urlopen(self.base + "/state") as resp:
             state = json.load(resp)
         self.assertEqual(state["sessions"][0]["state"], "starting")
+
+
+@unittest.skipUnless(sys.platform == "darwin", "LaunchAgent solo su macOS")
+class LaunchAgentTest(unittest.TestCase):
+    def test_toggle_writes_and_removes_plist(self):
+        with TemporaryDirectory() as tmp, mock.patch.object(autostart, "LAUNCH_AGENTS", Path(tmp) / "agents"):
+            self.assertFalse(autostart.is_enabled())
+            autostart.set_enabled(True)
+            self.assertTrue(autostart.is_enabled())
+            with autostart.plist_path().open("rb") as fh:
+                plist = plistlib.load(fh)
+            self.assertEqual(plist["ProgramArguments"], [sys.executable, "-m", "soundpad.daemon"])
+            self.assertTrue(plist["RunAtLoad"])
+            self.assertNotIn("KeepAlive", plist)
+            autostart.set_enabled(False)
+            self.assertFalse(autostart.is_enabled())
+            autostart.set_enabled(False)  # già spento: nessun errore
 
 
 class InstallHooksTest(unittest.TestCase):
