@@ -17,7 +17,7 @@ from soundpad import install_hooks
 from soundpad.claudeapp import AppSession, SessionIndex
 from soundpad.daemon import ALERT_KEY, CLEAR_KEY, PERMISSION_KEYS, Board, load_config, make_handler, next_state
 from soundpad.install_hooks import EVENTS, default_url, install, uninstall
-from soundpad.launchpad import Led, SimLaunchpad, key_for_note, note_for
+from soundpad.launchpad import Led, MidiStream, SimLaunchpad, encode_stream, key_event, key_for_note, led_message, note_for
 
 URL = "http://127.0.0.1:47800/event"
 
@@ -512,6 +512,35 @@ class LaunchpadTest(unittest.TestCase):
         self.assertEqual(Led().velocity(), 12)
         self.assertEqual(Led("red").velocity(), 3 + 12)
         self.assertEqual(Led("green", True).velocity(), 48 + 8)
+
+    def test_key_event(self):
+        self.assertEqual(key_event(0x90, 0x12, 127), (("grid", 1, 2), True))
+        self.assertEqual(key_event(0x90, 0x12, 0), (("grid", 1, 2), False))
+        self.assertEqual(key_event(0x80, 0x08, 64), (("grid", 0, 8), False))
+        self.assertEqual(key_event(0xB0, 104, 127), (("top", 0, 0), True))
+        self.assertIsNone(key_event(0xB0, 0, 0))
+        self.assertIsNone(key_event(0x90, 0x09, 127))
+
+    def test_stream_running_status_across_packets(self):
+        # Pacchetti veri letti dal Launchpad via USB su macOS
+        stream = MidiStream()
+        packets = ["90 00 00 b0 68 00 69 00", "", "69 7f", "6b 00 6c 00", "90 76 7f", "75", " 7f", "b0 6e 7f"]
+        out = [m for p in packets for m in stream.feed(bytes.fromhex(p))]
+        self.assertEqual(out, [(0x90, 0, 0), (0xB0, 0x68, 0), (0xB0, 0x69, 0), (0xB0, 0x69, 127),
+                               (0xB0, 0x6B, 0), (0xB0, 0x6C, 0), (0x90, 0x76, 127), (0x90, 0x75, 127),
+                               (0xB0, 0x6E, 127)])
+
+    def test_stream_ignores_realtime_and_sysex(self):
+        stream = MidiStream()
+        self.assertEqual(stream.feed(bytes([0x90, 0x01, 0xF8, 0x7F, 0xF0, 0x01, 0x02, 0xF7, 0x03])),
+                         [(0x90, 0x01, 0x7F)])
+
+    def test_encode_running_status(self):
+        messages = [led_message(("grid", 0, 0), Led("green")), led_message(("grid", 1, 1), Led("red")),
+                    led_message(("top", 0, 2), Led("amber")), led_message(("grid", 0, 8), Led())]
+        data = encode_stream(messages)
+        self.assertEqual(data, bytes([0x90, 0x00, 60, 0x11, 15, 0xB0, 106, 63, 0x90, 0x08, 12]))
+        self.assertEqual(MidiStream().feed(data), messages)  # andata e ritorno
 
 
 if __name__ == "__main__":

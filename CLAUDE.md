@@ -12,7 +12,7 @@ sessioni di Claude Code, alimentato dagli hook HTTP di Claude Code. Un pad = una
 | File | Cosa fa |
 |---|---|
 | `soundpad/daemon.py` | Cuore: `Board` (sessioni, stati, disegno, effetti, permessi), server HTTP, `Service`, `main` (`uv run soundpad`) |
-| `soundpad/launchpad.py` | Driver MIDI del Launchpad (mido + python-rtmidi) e `SimLaunchpad` per `--sim`; `Led.of((rosso, verde))` |
+| `soundpad/launchpad.py` | Driver del Launchpad: `MidiLaunchpad` (mido, Windows/Linux), `UsbLaunchpad` (pyusb + libusb, macOS), `SimLaunchpad` per `--sim`; `Led.of((rosso, verde))` |
 | `soundpad/effects.py` | Animazioni: `Ripple`, `Spark`, `FadeOut`, `Boot`, `Rain`, `breathe`. Colori come coppie (rosso, verde) 0..3 |
 | `soundpad/permissions.py` | Richieste di permesso tenute in sospeso e risposte (accetta una volta / sempre / rifiuta) |
 | `soundpad/install_hooks.py` | Registra gli hook HTTP in `~/.claude/settings.json` (`uv run soundpad-hooks`) |
@@ -42,6 +42,9 @@ python -m unittest              # test (anche senza uv: non servono dipendenze)
 - I test non devono toccare il Launchpad né `~/.claude/settings.json` (usa `SimLaunchpad`, `TemporaryDirectory`,
   `static_config()` per test senza animazioni, `board.clock` finto per quelli con animazioni).
 - MIDI del Launchpad MK1 è lento: `Board.redraw` manda solo i LED cambiati; tenere le animazioni sotto ~600 msg/s.
+  Via USB (macOS) il tetto misurato è ~475 LED/s: un pacchetto da 8 byte ogni ~8 ms, 4 LED a pacchetto.
+- `UsbLaunchpad`: mai `dev.reset()` e mai `set_configuration()` su un dispositivo già configurato. Bloccano
+  gli endpoint o fanno sparire il Launchpad dal bus finché non si stacca il cavo.
 - La risposta a un hook diverso da PermissionRequest deve essere **vuota** (204): qualsiasi JSON verrebbe letto
   da Claude Code come output dell'hook.
 - Endpoint che cambiano il computer (`/app/*`, risposte ai permessi) accettano solo richieste da 127.0.0.1 e con

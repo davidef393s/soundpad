@@ -7,12 +7,18 @@ Protocollo (dal Launchpad Programmer's Reference):
 - colore: velocity = 16*verde + rosso + flag, con verde/rosso in 0..3
   flag 12 = luce fissa, flag 8 = lampeggio (serve il lampeggio automatico, B0 00 28)
 - pressione: velocity 127, rilascio: velocity 0
+
+Due modi di parlargli:
+- `MidiLaunchpad`: porte MIDI del sistema. Su Windows c'è il driver Novation, su Linux il kernel.
+- `UsbLaunchpad`: USB diretto con libusb. Serve su macOS, dove il driver Novation non esiste più per
+  Apple Silicon e il dispositivo (classe USB vendor-specific, non MIDI standard) non ha porte CoreMIDI.
 """
 
 from __future__ import annotations
 
 import sys
 import threading
+import time
 from dataclasses import dataclass
 from typing import Callable
 
@@ -83,6 +89,65 @@ def key_for_note(note: int) -> Key | None:
     return None
 
 
+def key_event(status: int, data1: int, data2: int) -> tuple[Key, bool] | None:
+    """Messaggio MIDI in arrivo dal Launchpad -> (tasto, premuto?). None se non è un tasto."""
+    kind = status & 0xF0
+    if kind in (0x80, 0x90):
+        key = key_for_note(data1)
+        return (key, kind == 0x90 and data2 > 0) if key is not None else None
+    if kind == 0xB0 and data1 in TOP_ROW_CC:
+        return ("top", 0, data1 - 104), data2 > 0
+    return None
+
+
+class MidiStream:
+    """Ricompone i messaggi MIDI da un flusso di byte grezzi (ingresso USB del Launchpad).
+
+    Il Launchpad usa il running status (lo status si ripete solo quando cambia) e i messaggi possono stare
+    a cavallo di due pacchetti USB, o più di uno nello stesso pacchetto.
+    """
+
+    def __init__(self) -> None:
+        self._status = 0
+        self._data: list[int] = []
+
+    def feed(self, chunk: bytes) -> list[tuple[int, int, int]]:
+        out = []
+        for byte in chunk:
+            if byte >= 0xF8:  # real time: non interrompe il messaggio in corso
+                continue
+            if byte >= 0x80:
+                self._status = byte if byte < 0xF0 else 0  # sysex e simili: ignorati
+                self._data = []
+                continue
+            if not self._status:
+                continue
+            self._data.append(byte)
+            if len(self._data) == 2:  # note on/off e control change hanno due byte di dati
+                out.append((self._status, *self._data))
+                self._data = []
+        return out
+
+
+def encode_stream(messages: list[tuple[int, int, int]]) -> bytes:
+    """Messaggi MIDI -> byte con running status: 2 byte a LED invece di 3 sul canale USB lento."""
+    out = bytearray()
+    last = None
+    for status, data1, data2 in messages:
+        if status != last:
+            out.append(status)
+            last = status
+        out += bytes((data1, data2))
+    return bytes(out)
+
+
+def led_message(key: Key, led: Led) -> tuple[int, int, int]:
+    kind, row, col = key
+    if kind == "top":
+        return (0xB0, 104 + col, led.velocity())
+    return (0x90, note_for(row, col), led.velocity())
+
+
 class MidiLaunchpad:
     """Launchpad fisico via mido + python-rtmidi. Si riconnette se il cavo viene staccato."""
 
@@ -143,18 +208,11 @@ class MidiLaunchpad:
         self._on_press = handler
 
     def _on_message(self, msg) -> None:
-        if self._on_press is None:
+        if self._on_press is None or msg.type not in ("note_on", "note_off", "control_change"):
             return
-        if msg.type in ("note_on", "note_off"):
-            key = key_for_note(msg.note)
-            pressed = msg.type == "note_on" and msg.velocity > 0
-        elif msg.type == "control_change" and msg.control in TOP_ROW_CC:
-            key = ("top", 0, msg.control - 104)
-            pressed = msg.value > 0
-        else:
-            return
-        if key is not None:
-            self._on_press(key, pressed)
+        event = key_event(*msg.bytes()[:3])
+        if event is not None:
+            self._on_press(*event)
 
     # --- output ------------------------------------------------------------
     def _send_cc(self, control: int, value: int) -> None:
@@ -163,19 +221,158 @@ class MidiLaunchpad:
                 self._outport.send(self._mido.Message("control_change", control=control, value=value))
 
     def set(self, key: Key, led: Led) -> None:
-        kind, row, col = key
         with self._lock:
-            if self._outport is None:
-                return
-            if kind == "top":
-                msg = self._mido.Message("control_change", control=104 + col, value=led.velocity())
-            else:
-                msg = self._mido.Message("note_on", note=note_for(row, col), velocity=led.velocity())
-            self._outport.send(msg)
+            if self._outport is not None:
+                self._outport.send(self._mido.Message.from_bytes(led_message(key, led)))
 
     def clear(self) -> None:
         self._send_cc(0, 0)
         self._send_cc(0, 0x28)
+
+
+class UsbLaunchpad:
+    """Launchpad fisico via libusb (pyusb). Stessa interfaccia di MidiLaunchpad.
+
+    USB del Launchpad: un'interfaccia vendor-specific con due endpoint interrupt da 8 byte, 0x02 in uscita e
+    0x81 in ingresso, che portano MIDI grezzo (come il quirk QUIRK_MIDI_RAW_BYTES del driver Linux).
+    Il dispositivo è low-speed: un pacchetto ogni ~8 ms, quindi `set` accumula e `flush` spedisce tutto
+    insieme con il running status (4 LED per pacchetto).
+    """
+
+    VENDOR, PRODUCT = 0x1235, 0x000E
+    EP_OUT, EP_IN = 0x02, 0x81
+    PACKET = 8
+    # Dove cercare libusb se ctypes non la trova da sé (su macOS non guarda nelle cartelle di Homebrew)
+    LIBUSB_PATHS = ("/opt/homebrew/lib/libusb-1.0.0.dylib", "/usr/local/lib/libusb-1.0.0.dylib")
+
+    def __init__(self) -> None:
+        import usb.backend.libusb1  # import locale: serve solo con questo driver
+        import usb.core
+        import usb.util
+
+        self._usb = usb
+        self._backend = usb.backend.libusb1.get_backend()
+        for path in self.LIBUSB_PATHS:
+            if self._backend is not None:
+                break
+            self._backend = usb.backend.libusb1.get_backend(find_library=lambda _name, p=path: p)
+        if self._backend is None:
+            raise RuntimeError("libusb non trovata: installala con `brew install libusb`")
+        self._dev = None
+        self._pending: list[tuple[int, int, int]] = []
+        self._on_press: PressHandler | None = None
+        self._lock = threading.Lock()
+        self._stream = MidiStream()
+
+    # --- connessione -------------------------------------------------------
+    @property
+    def connected(self) -> bool:
+        return self._dev is not None
+
+    def try_connect(self) -> bool:
+        """Apre il dispositivo se è collegato. Ritorna True se è appena stato collegato."""
+        if self.connected:
+            return False  # uno scollegamento lo scopre il thread di lettura (o una scrittura che fallisce)
+        dev = self._usb.core.find(idVendor=self.VENDOR, idProduct=self.PRODUCT, backend=self._backend)
+        if dev is None:
+            return False
+        try:
+            # Solo se serve: riconfigurare un dispositivo già configurato blocca gli endpoint di questo
+            # firmware, e poi solo staccare il cavo lo rimette in sesto. Mai usare dev.reset() per lo stesso
+            # motivo: il Launchpad sparisce dal bus.
+            try:
+                dev.get_active_configuration()
+            except self._usb.core.USBError:
+                dev.set_configuration()
+            self._usb.util.claim_interface(dev, 0)
+        except self._usb.core.USBError as exc:
+            print(f"[launchpad] USB non apribile (un altro programma lo usa?): {exc}", file=sys.stderr)
+            self._usb.util.dispose_resources(dev)
+            return False
+        with self._lock:
+            self._dev = dev
+            self._stream = MidiStream()
+            self._pending = []
+        threading.Thread(target=self._read_loop, args=(dev,), daemon=True).start()
+        print("[launchpad] collegato via USB", file=sys.stderr)
+        self.clear()
+        return True
+
+    def _close(self, dev) -> None:
+        """Chiude `dev` se è ancora quello in uso. Da chiamare con il lock preso."""
+        if self._dev is not dev:
+            return
+        self._dev = None
+        self._pending = []
+        try:
+            self._usb.util.release_interface(dev, 0)
+        except Exception:
+            pass
+        self._usb.util.dispose_resources(dev)
+        print("[launchpad] scollegato", file=sys.stderr)
+
+    # --- input -------------------------------------------------------------
+    def on_press(self, handler: PressHandler) -> None:
+        self._on_press = handler
+
+    def _read_loop(self, dev) -> None:
+        errors = 0
+        while self._dev is dev:
+            try:
+                chunk = dev.read(self.EP_IN, self.PACKET, timeout=500).tobytes()
+            except self._usb.core.USBTimeoutError:
+                continue
+            except self._usb.core.USBError:
+                errors += 1  # un errore isolato capita; tre di fila = cavo staccato
+                if errors >= 3:
+                    with self._lock:
+                        self._close(dev)
+                    return
+                time.sleep(0.1)
+                continue
+            errors = 0
+            self.feed(chunk)
+
+    def feed(self, chunk: bytes) -> None:
+        """Byte arrivati dal dispositivo -> pressioni. Separato dal thread di lettura per i test."""
+        for message in self._stream.feed(chunk):
+            event = key_event(*message)
+            if event is not None and self._on_press is not None:
+                self._on_press(*event)
+
+    # --- output ------------------------------------------------------------
+    def _write(self, data: bytes) -> None:
+        """Spedisce `data` a pacchetti da 8 byte. Da chiamare con il lock preso."""
+        dev = self._dev
+        if dev is None:
+            return
+        try:
+            for i in range(0, len(data), self.PACKET):
+                dev.write(self.EP_OUT, data[i:i + self.PACKET], timeout=1000)
+        except self._usb.core.USBError as exc:
+            print(f"[launchpad] scrittura USB fallita: {exc}", file=sys.stderr)
+            self._close(dev)
+
+    def set(self, key: Key, led: Led) -> None:
+        with self._lock:
+            if self._dev is not None:
+                self._pending.append(led_message(key, led))
+
+    def flush(self) -> None:
+        with self._lock:
+            pending, self._pending = self._pending, []
+            if pending:
+                self._write(encode_stream(pending))
+
+    def clear(self) -> None:
+        with self._lock:
+            self._pending = []
+            self._write(bytes((0xB0, 0, 0, 0, 0x28)))  # reset, poi lampeggio automatico del dispositivo
+
+
+def make_launchpad() -> MidiLaunchpad | UsbLaunchpad:
+    """Il driver giusto per il sistema: USB diretto su macOS, porte MIDI altrove."""
+    return UsbLaunchpad() if sys.platform == "darwin" else MidiLaunchpad()
 
 
 class SimLaunchpad:

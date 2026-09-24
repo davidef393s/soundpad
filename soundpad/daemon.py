@@ -20,7 +20,7 @@ from typing import Callable
 
 from . import autostart, effects, install_hooks, permissions
 from .claudeapp import SessionIndex
-from .launchpad import COLORS, Key, Led, MidiLaunchpad, SimLaunchpad
+from .launchpad import COLORS, Key, Led, SimLaunchpad, make_launchpad
 from .paths import config_path
 
 DEFAULT_CONFIG = {
@@ -657,7 +657,7 @@ class Service:
                  on_show: Callable[[], None] | None = None) -> None:
         self.cfg = cfg
         self.sim = SimLaunchpad(quiet=quiet) if sim else None
-        self.pad = self.sim or MidiLaunchpad()
+        self.pad = self.sim or make_launchpad()
         # Titoli delle chat dall'app desktop; l'apertura della chat giusta è solo Windows (focus_app)
         index = SessionIndex() if sys.platform in ("win32", "darwin") else None
         self.board = Board(self.pad, cfg, index)

@@ -1,8 +1,8 @@
 # soundpad
 
 Launchpad originale (NOVLPD01) come spia delle sessioni di Claude Code, alimentata dagli hook.
-Un pad = una sessione. Il demone funziona su Windows e macOS; aprire la chat giusta, l'avvio automatico e
-l'exe sono per ora solo Windows (dettagli e stato del lavoro in [HANDOFF.md](HANDOFF.md)).
+Un pad = una sessione. Il demone funziona su Windows e macOS (su macOS il Launchpad va via USB diretto, senza
+driver); aprire la chat giusta, l'avvio automatico e l'exe sono per ora solo Windows (dettagli e stato del lavoro in [HANDOFF.md](HANDOFF.md)).
 
 ## Legenda
 
@@ -110,6 +110,29 @@ Per togliere gli hook: `uv run soundpad-hooks --uninstall`.
 
 Gli hook usano la porta scritta in `config.toml`. Se la cambi, rilancia `uv run soundpad-hooks`
 (e togli prima quelli vecchi con `--uninstall --url http://127.0.0.1:<VECCHIA-PORTA>/event`).
+
+## Installazione su macOS
+
+Su macOS il Launchpad originale non ha driver: Novation non lo aggiorna più e il dispositivo non è un MIDI
+standard, quindi non compare in "Configurazione MIDI Audio". soundpad gli parla direttamente via USB con
+libusb, senza installare driver.
+
+1. Installa **uv** e **libusb**:
+   ```
+   brew install uv libusb
+   ```
+2. Collega il Launchpad e chiudi le pagine del browser che usano WebUSB/WebMIDI con il Launchpad: il
+   dispositivo lo apre un solo programma alla volta.
+3. Dalla cartella `soundpad`:
+   ```
+   uv run soundpad
+   ```
+   Il tasto tondo in alto a sinistra si accende di verde e nel terminale compare
+   `[launchpad] collegato via USB`.
+4. Registra gli hook: `uv run soundpad-hooks`.
+
+Se il Launchpad smette di rispondere (LED fermi, errori di scrittura USB nel terminale), stacca e riattacca
+il cavo: il demone lo ricollega da solo entro 2 secondi.
 
 ## Claude su un computer, Launchpad su un altro
 

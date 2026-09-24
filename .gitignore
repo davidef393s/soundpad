@@ -7,3 +7,5 @@ build/
 .venv-build/
 *.spec
 .claude/settings.local.json
+.DS_Store
+*.bundle

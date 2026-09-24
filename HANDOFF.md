@@ -1,6 +1,7 @@
 # soundpad: stato del lavoro
 
-Aggiornato il 23 settembre 2026, a fine sessione su Windows (PC "DavidePC", Launchpad collegato lì).
+Aggiornato il 24 settembre 2026, sessione sul Mac (Apple Silicon, macOS 26) con il Launchpad collegato via USB.
+Il lavoro precedente (23 settembre) è stato fatto sul PC Windows "DavidePC".
 
 ## Cosa funziona (provato sul PC Windows con il Launchpad vero)
 
@@ -21,7 +22,23 @@ Aggiornato il 23 settembre 2026, a fine sessione su Windows (PC "DavidePC", Laun
   proposta da Claude Code (`permission_suggestions` rimandate come `updatedPermissions`).
 - **Effetti**: onde (5 onde rosse per un permesso, si fermano alla risposta), respiro per "al lavoro", avvio,
   screensaver, colonna di stato sui tondi a destra, tasto premuto illuminato.
-- 48 test verdi (`python -m unittest`).
+- 52 test verdi (`python -m unittest`).
+
+## Mac: Launchpad via USB diretto (24 settembre)
+
+- Il Launchpad MK1 su macOS **non ha porte CoreMIDI**: classe USB `0xff` vendor-specific, nessun driver Novation
+  per Apple Silicon. Il sistema vede il dispositivo USB (`1235:000e`), mido no.
+- `UsbLaunchpad` (in `launchpad.py`) gli parla con pyusb + libusb (`brew install libusb`). `make_launchpad()` lo
+  sceglie su macOS, `MidiLaunchpad` resta per Windows e Linux.
+- Protocollo verificato dal vivo: un'interfaccia con endpoint interrupt `0x02` (uscita) e `0x81` (ingresso),
+  8 byte a pacchetto, `bInterval` 10. Nei due sensi passano byte MIDI grezzi con **running status**, e un
+  messaggio può stare a cavallo di due pacchetti.
+- Misurato: 80 LED in 0,168 s (~475 LED/s). Pressioni, rilasci e pressioni sovrapposte arrivano tutti.
+- Scoperto a caro prezzo: un secondo `set_configuration()` blocca gli endpoint (`Errno 5`), e `dev.reset()` fa
+  sparire il Launchpad dal bus fino a quando si stacca il cavo. Il driver non fa né l'uno né l'altro.
+- Il primo pacchetto dopo il collegamento contiene rilasci finti (`90 00 00 b0 68 00 69 00`): innocui, perché
+  `handle_press` ignora i rilasci senza pressione.
+- Chrome può tenere aperto il dispositivo (una pagina WebUSB): se `claim_interface` fallisce, controllare lì.
 
 ## Scoperte da ricordare
 
@@ -53,7 +70,8 @@ Il demone, gli hook, la pagina, gli effetti e i permessi sono multipiattaforma. 
 | Funzione | Su macOS oggi | Idea |
 |---|---|---|
 | Aprire la chat giusta (`claudeapp.open_chat`, UI Automation) | porta in primo piano l'app con `open -a Claude` | Accessibility API (AppleScript/`osascript` o pyobjc) sul pulsante della barra laterale; oppure il link `claude://` se il gate si accende |
-| Titoli delle chat (`SessionIndex`) | attivo, percorso `~/Library/Application Support/Claude/claude-code-sessions` **non verificato** | controllare che esista e abbia gli stessi campi |
+| Titoli delle chat (`SessionIndex`) | **verificato**: `~/Library/Application Support/Claude/claude-code-sessions/<account>/<org>/local_*.json`, stessi campi di Windows | fatto |
+| Launchpad | **fatto**: `UsbLaunchpad` via libusb | — |
 | `winfocus.py` | non usato | non serve: `open -a Claude` basta |
 | Avvio automatico (`autostart.py`) | non disponibile | LaunchAgent in `~/Library/LaunchAgents` |
 | Build (`build.py`) | non provata | PyInstaller su macOS fa un `.app` con `--windowed`; l'icona `.ico` va convertita in `.icns` |
